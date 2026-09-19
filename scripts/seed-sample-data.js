@@ -9,7 +9,7 @@ if (existing > 0) {
   process.exit(0);
 }
 
-const admin = db.prepare("SELECT id FROM users WHERE email = 'admin@nvf.local'").get();
+const admin = db.prepare("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1").get();
 const ownerId = admin ? admin.id : null;
 
 // Values and costs are in the app's reporting currency (AED by default).

@@ -1,10 +1,10 @@
 @import url('/fonts/brand-fonts.css');
 
 /* ==========================================================================
-   NVF LIFESTYLE — brand tokens
-   Palette and typography per NVF Brand Guidelines (see /brand folder).
-   Only approved brand colours are used; lighter tones are opacity tints of
-   Deep Brown rather than new hues.
+   V LIVING TRADING — brand tokens
+   Palette and typography follow the brand guidelines in /brand, retained
+   through the rename. Only approved brand colours are used; lighter tones are
+   opacity tints of Deep Brown rather than new hues.
    ========================================================================== */
 :root {
   /* primary palette */
@@ -58,7 +58,7 @@ h1, h2, h3, h4 {
 
 a { color: inherit; }
 
-/* letterspaced micro-label — NVF's signature documentation device */
+/* letterspaced micro-label — the brand's signature documentation device */
 .eyebrow,
 .kpi-card .label,
 th,
@@ -92,13 +92,19 @@ label {
   gap: 16px;
 }
 
-/* NVF wordmark, tinted from the official artwork via CSS mask */
+/* V Living wordmark — typographic placeholder in the brand heading face.
+   Swap for real artwork when it's ready: set a fixed width/height and use
+   `-webkit-mask`/`mask` with the logo file, as the previous artwork did. */
 .logo-mark {
-  width: 76px;
-  height: 25px;
-  background: var(--soft-canvas);
-  -webkit-mask: url(/img/nvf-wordmark-mask.png) no-repeat left center / contain;
-  mask: url(/img/nvf-wordmark-mask.png) no-repeat left center / contain;
+  font-family: var(--font-heading);
+  font-weight: 200;
+  font-size: 21px;
+  line-height: 1;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--soft-canvas);
+  text-decoration: none;
+  white-space: nowrap;
   flex: none;
 }
 
@@ -392,24 +398,33 @@ td.negative { color: var(--burnt-orange); }
   text-align: left;
 }
 
-/* full primary lockup (NVF + LIFESTYLE), in Burnt Orange on Soft Canvas */
+/* full lockup, in Burnt Orange on Soft Canvas — typographic placeholder */
 .login-card .logo-lockup {
-  width: 150px;
-  height: 79px;
-  margin: 0 auto 30px;
-  background: var(--burnt-orange);
-  -webkit-mask: url(/img/nvf-logo-mask.png) no-repeat center / contain;
-  mask: url(/img/nvf-logo-mask.png) no-repeat center / contain;
+  margin: 0 auto 34px;
+  text-align: center;
+  color: var(--burnt-orange);
 }
 
-.login-card .tagline {
-  text-align: center;
-  font-size: 9.5px;
+.login-card .logo-lockup .mark {
+  display: block;
+  font-family: var(--font-heading);
+  font-weight: 200;
+  font-size: 38px;
+  line-height: 1;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  letter-spacing: 0.26em;
-  color: var(--text-muted);
-  margin: 0 0 34px;
+  text-indent: 0.16em; /* offset the trailing letter-space so it reads centred */
+}
+
+.login-card .logo-lockup .sub {
+  display: block;
+  margin-top: 10px;
+  font-family: var(--font-body);
+  font-size: 10px;
   font-weight: 500;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  text-indent: 0.42em;
 }
 
 .login-card h1 {

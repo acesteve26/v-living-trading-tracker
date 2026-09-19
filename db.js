@@ -7,7 +7,7 @@ const bcrypt = require('bcryptjs');
 const dataDir = path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
 
-const db = new DatabaseSync(path.join(dataDir, 'nvf.db'));
+const db = new DatabaseSync(path.join(dataDir, 'tracker.db'));
 db.exec('PRAGMA journal_mode = WAL');
 db.exec('PRAGMA foreign_keys = ON');
 
@@ -70,12 +70,12 @@ function seed() {
   if (userCount === 0) {
     // No password is ever hardcoded here: set ADMIN_EMAIL / ADMIN_PASSWORD to
     // choose your own, otherwise a random one is generated and printed once.
-    const email = (process.env.ADMIN_EMAIL || 'admin@nvf.local').toLowerCase().trim();
+    const email = (process.env.ADMIN_EMAIL || 'admin@vliving.local').toLowerCase().trim();
     const password = process.env.ADMIN_PASSWORD || crypto.randomBytes(9).toString('base64url');
     const generated = !process.env.ADMIN_PASSWORD;
 
     db.prepare('INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)').run(
-      'NVF Admin',
+      'V Living Admin',
       email,
       bcrypt.hashSync(password, 10),
       'admin'
@@ -102,7 +102,7 @@ function seed() {
 
   const companyName = db.prepare("SELECT value FROM settings WHERE key = 'company_name'").get();
   if (!companyName) {
-    db.prepare("INSERT INTO settings (key, value) VALUES ('company_name', 'NVF Lifestyle')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('company_name', 'V Living Trading')").run();
   }
 }
 

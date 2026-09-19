@@ -149,7 +149,7 @@ function collectDealForm() {
   renderTopbar('deals', currentUser);
   await loadCurrency();
   stageProbabilities = (await api('/api/settings')).stageProbabilities;
-  const cur = window.__NVF_CURRENCY__;
+  const cur = window.__APP_CURRENCY__;
   document.getElementById('valueLabel').textContent = `Deal value (${cur}) *`;
   document.getElementById('costLabel').textContent = `Cost (${cur})`;
   document.getElementById('gpHeader').textContent = `GP (${cur})`;

@@ -1,10 +1,10 @@
 @echo off
-title NVF Trading Tracker
+title V Living Trading Tracker
 cd /d "%~dp0"
 color F0
 
 echo.
-echo    NVF LIFESTYLE - TRADING TRACKER
+echo    V LIVING TRADING - TRACKER
 echo    ================================
 echo.
 

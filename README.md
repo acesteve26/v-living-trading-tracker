@@ -1,8 +1,8 @@
-# NVF Trading Tracker
+# V Living Trading Tracker
 
-A standalone deals / pipeline / proposals tracker built for NVF Lifestyle (tiles & sanitaryware trading). Runs as a small local web app with a shared SQLite database, so multiple people on the same network can log in and use it from their own machines.
+A standalone deals / pipeline / proposals tracker built for V Living Trading (tiles & sanitaryware trading). Runs as a small local web app with a shared SQLite database, so multiple people on the same network can log in and use it from their own machines.
 
-Styled to the NVF Brand Guidelines — see [Branding](#4-branding) below. All figures are in **AED**.
+Brand palette and typography carried over from the NVF brand guidelines — see [Branding](#4-branding) below. All figures are in **AED**.
 
 ## What it does
 
@@ -29,7 +29,7 @@ Install it either by:
 
 ## 2. Install & run
 
-**Double-click `NVF Trading Tracker`** (the shortcut with the NVF icon in this folder).
+**Double-click `V Living Trading Tracker`** (the shortcut with the VL icon in this folder).
 
 That's it. A small black window opens showing the tracker is running, and your browser opens at the login page automatically. On the very first run it takes a minute or two to set itself up.
 
@@ -47,7 +47,7 @@ npm install
 npm start
 ```
 
-You'll see `NVF Trading Tracker running at http://localhost:3000`. Open that address in a browser.
+You'll see `V Living Trading Tracker running at http://localhost:3000`. Open that address in a browser.
 </details>
 
 ### Your first login
@@ -58,7 +58,7 @@ The very first time the app starts against an empty database, it creates one adm
 ============================================================
  FIRST RUN - administrator account created
 ============================================================
- Email:    admin@nvf.local
+ Email:    admin@vliving.local
  Password: mRuxj9YLIhJV
 ============================================================
 ```
@@ -101,10 +101,12 @@ To keep it running in the background (so it survives a logout), consider a tool 
 
 ## 4. Branding
 
-The app is built to the NVF Brand Guidelines. Reference documents are kept in the [brand/](brand) folder:
+The colour palette and typography come from the NVF brand guidelines and were **kept through the rename to V Living Trading**. New logo artwork is still to come — see [Logo](#logo) below.
+
+Reference documents are kept in the [brand/](brand) folder:
 
 - `NVF-Brand-Guidelines.pdf` — the full brand guide (palette, logo rules, typography, tone of voice)
-- `NVF-Example-Document-YASRA-Warehouse-Investment.pdf` — an example of NVF's own documentation, used as the reference for layout and typographic style
+- `NVF-Example-Document-YASRA-Warehouse-Investment.pdf` — an example document, used as the reference for layout and typographic style
 
 Both are excluded from version control via `.gitignore` — the guidelines are permission-controlled and the example document is marked confidential, so they should not end up in a repo. They are also **not** served by the web app; they sit outside `public/`.
 
@@ -124,26 +126,30 @@ Both are excluded from version control via `.gitignore` — the guidelines are p
 
 **Typography** — the brand's font suite, self-hosted in `public/fonts/` so it works with no internet connection:
 - **Outfit** — headings and large figures (per the guidelines' heading spec)
-- **Jost** — body text, subtitles and buttons, used uppercase with wide letter-spacing for micro-labels, mirroring the device used throughout NVF's own documents
+- **Jost** — body text, subtitles and buttons, used uppercase with wide letter-spacing for micro-labels, mirroring the device used throughout the reference documents
 
-**Logo** — taken from the guidelines artwork (page 12) and stored as alpha masks in `public/img/`, so it can be tinted to any brand colour via CSS without distorting, recolouring or adding effects to the artwork:
-- `nvf-wordmark-mask.png` — the NVF wordmark, used in the top bar (Soft Canvas on Deep Brown)
-- `nvf-logo-mask.png` — the full primary lockup (NVF + LIFESTYLE), used on the login screen (Burnt Orange on Soft Canvas)
+### Logo
 
-If you have the original vector logo files, drop them into `public/img/` and point the `.logo-mark` / `.logo-lockup` `mask` rules in [public/css/style.css](public/css/style.css) at them — everything else keeps working.
+**The current wordmark is a typographic placeholder, not final artwork.** The previous NVF logo was removed during the rename rather than left showing the wrong company name. In its place, "V Living" is set in Outfit ExtraLight with wide letter-spacing, in brand colours:
 
-**Note:** card surfaces use white, which is not itself a palette colour, as a neutral paper ground for data tables — consistent with the near-white panels in NVF's own documents. Change `--surface` to `#F5F0E7` if you'd prefer strict Soft Canvas throughout.
+- **Top bar** — `V LIVING` in Soft Canvas on Deep Brown (`.logo-mark` in [public/css/style.css](public/css/style.css))
+- **Login screen** — `V LIVING` over a smaller `TRADING`, in Burnt Orange on Soft Canvas (`.login-card .logo-lockup`)
+- **App icon** — a `VL` monogram, `public/img/vliving-tracker.ico`, used by the desktop shortcut
+
+**To drop in real artwork when you have it:** put the file in `public/img/`, then replace the font rules in `.logo-mark` and `.login-card .logo-lockup .mark` with a fixed `width`/`height` plus `-webkit-mask`/`mask` pointing at your file, and set `background` to the brand colour you want it tinted. Using a mask rather than an `<img>` means one file works in any brand colour. Comments in the stylesheet mark both spots.
+
+**Note:** card surfaces use white, which is not itself a palette colour, as a neutral paper ground for data tables — consistent with the near-white panels in the reference documents. Change `--surface` to `#F5F0E7` if you'd prefer strict Soft Canvas throughout.
 
 **Company name / currency:** set from the Users page (admin) → Company Settings. Currency is AED by default; changing it there updates every figure across the app.
 
 ## 5. Data & backups
 
-All data lives in `data/nvf.db` (created automatically on first run). It's excluded from git via `.gitignore` so it never gets committed accidentally.
+All data lives in `data/tracker.db` (created automatically on first run). It's excluded from git via `.gitignore` so it never gets committed accidentally.
 
-**Backing up correctly matters here.** The database runs in WAL mode, which means recent changes can still be sitting in the `nvf.db-wal` file rather than in `nvf.db` itself. Copying only `nvf.db` can silently give you a backup that's missing your latest work. Either:
+**Backing up correctly matters here.** The database runs in WAL mode, which means recent changes can still be sitting in the `tracker.db-wal` file rather than in `tracker.db` itself. Copying only `tracker.db` can silently give you a backup that's missing your latest work. Either:
 
-- **Stop the app first**, then copy `nvf.db` — a clean shutdown folds the WAL back into the main file; or
-- Copy **all three** files together (`nvf.db`, `nvf.db-wal`, `nvf.db-shm`) while it's running.
+- **Stop the app first**, then copy `tracker.db` — a clean shutdown folds the WAL back into the main file; or
+- Copy **all three** files together (`tracker.db`, `tracker.db-wal`, `tracker.db-shm`) while it's running.
 
 ## Notes & simplifications (MVP scope)
 
@@ -156,12 +162,12 @@ All data lives in `data/nvf.db` (created automatically on first run). It's exclu
 ## Project structure
 
 ```
-NVF Trading Tracker.lnk       <- double-click this to run it
-Start NVF Trading Tracker.cmd    the launcher the shortcut points at
+V Living Trading Tracker.lnk       <- double-click this to run it
+Start V Living Trading Tracker.cmd    the launcher the shortcut points at
 server.js           Express server + all API routes
 db.js               SQLite schema + seed data
 scripts/            Optional helper scripts (sample data)
-brand/              NVF brand guidelines + example NVF document (reference)
+brand/              Brand guidelines + example document (reference, not committed)
 public/             Frontend (static HTML/CSS/JS, no build step)
   login.html
   index.html          Dashboard
@@ -170,6 +176,6 @@ public/             Frontend (static HTML/CSS/JS, no build step)
   js/                 Page scripts + vendored Chart.js
   css/style.css       All styling & brand tokens
   fonts/              Self-hosted Outfit + Jost (brand font suite)
-  img/                NVF logo artwork (alpha masks)
+  img/                App icon (VL monogram)
 data/               SQLite database file (created at runtime)
 ```

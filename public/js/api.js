@@ -10,7 +10,7 @@ async function api(path, options = {}) {
 }
 
 const money = (n, currency) => {
-  const c = currency || (window.__NVF_CURRENCY__ || 'AED');
+  const c = currency || (window.__APP_CURRENCY__ || 'AED');
   const value = Number(n || 0);
   try {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: c, maximumFractionDigits: 0 }).format(value);
@@ -20,7 +20,7 @@ const money = (n, currency) => {
 };
 
 const moneyCompact = (n) => {
-  const c = window.__NVF_CURRENCY__ || 'AED';
+  const c = window.__APP_CURRENCY__ || 'AED';
   try {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -53,7 +53,7 @@ function renderTopbar(activePage, user) {
 
   el.innerHTML = `
     <div class="brand">
-      <a href="/index.html" class="logo-mark" aria-label="NVF Lifestyle"></a>
+      <a href="/index.html" class="logo-mark">V Living</a>
       <span class="divider"></span>
       <span class="app-name">Trading Tracker</span>
     </div>
@@ -82,10 +82,10 @@ function renderTopbar(activePage, user) {
 async function loadCurrency() {
   try {
     const { settings } = await api('/api/settings');
-    window.__NVF_CURRENCY__ = settings.currency || 'AED';
+    window.__APP_CURRENCY__ = settings.currency || 'AED';
     return settings;
   } catch (e) {
-    window.__NVF_CURRENCY__ = 'AED';
+    window.__APP_CURRENCY__ = 'AED';
     return {};
   }
 }

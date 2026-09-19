@@ -451,5 +451,5 @@ app.get('/api/dashboard', requireAuth, (req, res) => {
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.listen(PORT, () => {
-  console.log(`NVF Trading Tracker running at http://localhost:${PORT}`);
+  console.log(`V Living Trading Tracker running at http://localhost:${PORT}`);
 });

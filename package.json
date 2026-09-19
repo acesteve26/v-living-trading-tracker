@@ -1,7 +1,7 @@
 {
-  "name": "nvf-trading-tracker",
+  "name": "v-living-trading-tracker",
   "version": "1.0.0",
-  "description": "NVF Trading Tracker - deal pipeline and proposal tracker for NVF (tiles & sanitaryware trading)",
+  "description": "V Living Trading Tracker - deal pipeline and proposal tracker for V Living Trading (tiles & sanitaryware)",
   "private": true,
   "main": "server.js",
   "scripts": {
