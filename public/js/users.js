@@ -18,7 +18,7 @@ async function loadUsers() {
           ${
             u.id === currentUser.id
               ? ''
-              : `<button class="btn small secondary" data-action="toggle" data-id="${u.id}" data-active="${u.active}">${u.active ? 'Deactivate' : 'Activate'}</button>
+              : `<button class="btn small secondary" data-action="toggle" data-id="${u.id}" data-active="${u.active ? '1' : '0'}" data-role="${u.role}">${u.active ? 'Deactivate' : 'Activate'}</button>
                  <button class="btn small danger" data-action="delete" data-id="${u.id}">Delete</button>`
           }
         </td>
@@ -28,9 +28,11 @@ async function loadUsers() {
 
   document.querySelectorAll('[data-action="toggle"]').forEach((btn) =>
     btn.addEventListener('click', async () => {
+      // role must be sent back unchanged — the endpoint rewrites it, so omitting
+      // it would silently demote an admin to sales on every toggle
       await api(`/api/users/${btn.dataset.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ active: btn.dataset.active === '1' ? false : true, role: undefined })
+        body: JSON.stringify({ active: btn.dataset.active !== '1', role: btn.dataset.role })
       });
       await loadUsers();
     })

@@ -1,0 +1,37 @@
+# Render deployment for the V Living Trading Tracker.
+#
+# Render reads this file when you create a Blueprint from the repo, so the
+# service and database are defined here rather than clicked together by hand.
+#
+# IMPORTANT: the web service and the database must share a region, otherwise
+# they cannot use Render's private network.
+
+services:
+  - type: web
+    name: vliving-trading-tracker
+    runtime: node
+    region: frankfurt
+    plan: starter
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /login.html
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Generated once by Render and kept thereafter. Changing it signs everyone out.
+      - key: SESSION_SECRET
+        generateValue: true
+      # Wired automatically from the database defined below.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vliving-tracker-db
+          property: connectionString
+      # Optional: set ADMIN_EMAIL / ADMIN_PASSWORD in the dashboard before the
+      # first boot to choose the initial login. Leave them unset and a random
+      # password is printed once to the deploy logs instead.
+
+databases:
+  - name: vliving-tracker-db
+    databaseName: vliving_tracker
+    region: frankfurt
+    plan: basic-256mb

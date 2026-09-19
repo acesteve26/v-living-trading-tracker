@@ -1,16 +1,6 @@
 // Optional: populate the database with example deals so you can see the dashboard working.
 // Run with: node scripts/seed-sample-data.js
-const path = require('path');
-const { db } = require(path.join(__dirname, '..', 'db'));
-
-const existing = db.prepare('SELECT COUNT(*) AS c FROM deals').get().c;
-if (existing > 0) {
-  console.log(`Deals table already has ${existing} rows — skipping sample data to avoid duplicates.`);
-  process.exit(0);
-}
-
-const admin = db.prepare("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1").get();
-const ownerId = admin ? admin.id : null;
+const db = require('../db');
 
 // Values and costs are in the app's reporting currency (AED by default).
 // Cost may be left null on early-stage deals where it isn't known yet.
@@ -27,11 +17,34 @@ const sample = [
   ['Delta Sanitary Group', 'Sanitaryware', 73000, 51100, 'Proposal Sent', 50, '2026-10-28', null]
 ];
 
-const insert = db.prepare(`
-  INSERT INTO deals (customer_name, product_category, value, cost, stage, probability, expected_close_date, won_lost_date, owner_id)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-`);
+async function main() {
+  await db.init();
 
-sample.forEach((row) => insert.run(...row, ownerId));
+  const { count } = await db.one('SELECT COUNT(*)::int AS count FROM deals');
+  if (count > 0) {
+    console.log(`Deals table already has ${count} rows - skipping sample data to avoid duplicates.`);
+    return;
+  }
 
-console.log(`Inserted ${sample.length} sample deals.`);
+  const admin = await db.one("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1");
+  const ownerId = admin ? admin.id : null;
+
+  for (const row of sample) {
+    await db.query(
+      `INSERT INTO deals
+        (customer_name, product_category, value, cost, stage, probability,
+         expected_close_date, won_lost_date, owner_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [...row, ownerId]
+    );
+  }
+
+  console.log(`Inserted ${sample.length} sample deals.`);
+}
+
+main()
+  .catch((e) => {
+    console.error('Seed failed:', e.message);
+    process.exitCode = 1;
+  })
+  .finally(() => db.pool.end());

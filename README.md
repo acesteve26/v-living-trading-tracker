@@ -1,6 +1,6 @@
 # V Living Trading Tracker
 
-A standalone deals / pipeline / proposals tracker built for V Living Trading (tiles & sanitaryware trading). Runs as a small local web app with a shared SQLite database, so multiple people on the same network can log in and use it from their own machines.
+A deals / pipeline / proposals tracker built for V Living Trading (tiles & sanitaryware). A Node.js web app backed by PostgreSQL, designed to be hosted on Render so the sales team can reach it from anywhere with a login.
 
 Brand palette and typography carried over from the NVF brand guidelines — see [Branding](#4-branding) below. All figures are in **AED**.
 
@@ -17,7 +17,10 @@ Brand palette and typography carried over from the NVF brand guidelines — see 
 
 ## 1. Prerequisites — install Node.js
 
-This app needs **Node.js v22.5 or newer** installed once on whichever machine will run the server (it uses Node's built-in SQLite support, so there's nothing to compile — works even on machines without Python/build tools, including ARM64 Windows).
+Running this locally needs two things:
+
+1. **Node.js v22.5 or newer** — nothing here needs compiling, so it works on machines without Python or build tools, including ARM64 Windows.
+2. **A PostgreSQL database.** The app will not start without one. Create a free database on Render for development, then put its **External Database URL** into `.env` as `DATABASE_URL` (see [.env.example](.env.example)).
 
 Install it either by:
 - Downloading the LTS installer from https://nodejs.org and running it, or
@@ -59,7 +62,7 @@ The very first time the app starts against an empty database, it creates one adm
  FIRST RUN - administrator account created
 ============================================================
  Email:    admin@vliving.local
- Password: mRuxj9YLIhJV
+ Password: <a random 12-character password>
 ============================================================
 ```
 
@@ -89,15 +92,24 @@ Cost is optional. Leave it blank on an early-stage deal and the margin and GP co
 
 On the dashboard, **Pipeline Gross Profit** and **Won Gross Profit** total the GP for the selected period, with the blended margin underneath. These only count deals that have a cost captured, and the sub-line says how many that is (e.g. "4 of 5 deals costed") so a partial figure is never mistaken for the whole picture.
 
-## 3. Letting colleagues on the network use it
+## 3. Deploying to Render
 
-The server needs to keep running on one machine (a desk PC, small server, etc.). Everyone else just opens a browser and goes to that machine's address.
+[render.yaml](render.yaml) defines the whole deployment — web service plus database — so it can be created as a Blueprint rather than assembled by hand in the dashboard.
 
-1. On the machine running the server, find its local IP address: `ipconfig` (look for "IPv4 Address", e.g. `192.168.1.42`).
-2. Make sure Windows Firewall allows inbound connections on port 3000 for Node.js (Windows will usually prompt you the first time you run `npm start` — allow it on Private networks).
-3. Colleagues on the same network/WiFi open `http://192.168.1.42:3000` in their browser.
+1. In Render: **New +** → **Blueprint**, and point it at this GitHub repo
+2. Render reads `render.yaml` and proposes a web service and a Postgres database
+3. Approve it. `SESSION_SECRET` is generated automatically and `DATABASE_URL` is wired to the database for you — no secrets to copy by hand
+4. On the first boot, open the deploy **Logs** and find the generated admin password (see [Your first login](#your-first-login)). It is printed once
 
-To keep it running in the background (so it survives a logout), consider a tool like [pm2](https://pm2.keymetrics.io/) or a scheduled task that runs `npm start` at machine startup — ask if you'd like this set up.
+Every push to `main` on GitHub redeploys automatically.
+
+**Both must be in the same region** (`render.yaml` sets Frankfurt for both) or they can't use Render's private network.
+
+**Prefer a paid database plan for live data.** Render's free databases are time-limited and are deleted when they expire, which would take your pipeline with them.
+
+### Local development against a separate database
+
+Keep a second, free Render database for development and point `.env` at it. That way local work never touches live data, while still running the same database engine as production — the class of bug that only appears in production is largely avoided this way.
 
 ## 4. Branding
 
@@ -144,18 +156,19 @@ Both are excluded from version control via `.gitignore` — the guidelines are p
 
 ## 5. Data & backups
 
-All data lives in `data/tracker.db` (created automatically on first run). It's excluded from git via `.gitignore` so it never gets committed accidentally.
+Your pipeline lives in **PostgreSQL**, not in a file in this folder.
 
-**Backing up correctly matters here.** The database runs in WAL mode, which means recent changes can still be sitting in the `tracker.db-wal` file rather than in `tracker.db` itself. Copying only `tracker.db` can silently give you a backup that's missing your latest work. Either:
+- **Hosted on Render:** Render takes automatic daily backups on paid plans, with point-in-time recovery. Check the retention window on your plan — free databases are time-limited and are deleted when they expire.
+- **Manual backup:** `pg_dump "$DATABASE_URL" > backup.sql` produces a single restorable file. Worth running before anything risky.
+- **Never commit `.env`** — it holds the database credentials. It is gitignored, and that is deliberate.
 
-- **Stop the app first**, then copy `tracker.db` — a clean shutdown folds the WAL back into the main file; or
-- Copy **all three** files together (`tracker.db`, `tracker.db-wal`, `tracker.db-shm`) while it's running.
+The old SQLite file in `data/` is kept only so [scripts/migrate-from-sqlite.js](scripts/migrate-from-sqlite.js) can copy it across. Once your data is in Postgres, it is dead weight and can be deleted.
 
 ## Notes & simplifications (MVP scope)
 
 - Reporting currency is a single app-wide setting (AED by default), not per-deal — simplest approach unless you're regularly dealing in multiple currencies at once.
 - Single light theme only, matching the brand's warm/light identity — no dark mode, to avoid rendering the brand in unapproved tones.
-- Login sessions are kept in server memory, so everyone is logged out if the server restarts. Fine for an internal tool; can be upgraded to persistent sessions later if needed.
+- Login sessions are stored in Postgres (`user_sessions` table), so they survive restarts and deploys.
 - No audit trail / deal history yet (just current state, plus created/updated timestamps). Can be added if you want a change log per deal.
 - Cost is a single figure per deal, not a line-item breakdown — enough for margin reporting, but it won't itemise freight, duty or landed cost separately. Say the word if you need that split out.
 
@@ -165,7 +178,7 @@ All data lives in `data/tracker.db` (created automatically on first run). It's e
 V Living Trading Tracker.lnk       <- double-click this to run it
 Start V Living Trading Tracker.cmd    the launcher the shortcut points at
 server.js           Express server + all API routes
-db.js               SQLite schema + seed data
+db.js               Postgres pool, schema + seed data
 scripts/            Optional helper scripts (sample data)
 brand/              Brand guidelines + example document (reference, not committed)
 public/             Frontend (static HTML/CSS/JS, no build step)
@@ -177,5 +190,5 @@ public/             Frontend (static HTML/CSS/JS, no build step)
   css/style.css       All styling & brand tokens
   fonts/              Self-hosted Outfit + Jost (brand font suite)
   img/                App icon (VL monogram)
-data/               SQLite database file (created at runtime)
+data/               Legacy SQLite file, kept only for migration
 ```
