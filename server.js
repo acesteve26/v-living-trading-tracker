@@ -536,9 +536,30 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong. Please try again.' });
 });
 
+// A freshly provisioned database can refuse connections for a minute or so, and
+// managed databases briefly disappear during maintenance or failover. Giving up
+// on the first error turns a transient blip into a failed deploy, so retry with
+// backoff before treating it as fatal.
+async function connectWithRetry(attempts = 10) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      await db.init();
+      if (attempt > 1) console.log(`Database ready after ${attempt} attempts.`);
+      return;
+    } catch (e) {
+      if (attempt === attempts) throw e;
+      const waitMs = Math.min(1000 * 2 ** (attempt - 1), 8000);
+      console.warn(
+        `Database not ready (attempt ${attempt}/${attempts}): ${e.message}. Retrying in ${waitMs / 1000}s...`
+      );
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
+}
+
 async function start() {
   try {
-    await db.init();
+    await connectWithRetry();
   } catch (e) {
     console.error(`\n  DATABASE ERROR: could not connect or set up tables.\n  ${e.message}\n`);
     process.exit(1);

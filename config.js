@@ -50,6 +50,26 @@ function resolveDatabaseUrl() {
   );
 }
 
+// TLS depends on where the database is:
+//   - External host (dpg-xxx.frankfurt-postgres.render.com) crosses the public
+//     internet, so the connection is encrypted AND the certificate verified.
+//   - Render's internal host is a bare name (dpg-xxx) on their private network.
+//     A public certificate can't validate against it, and Render's internal
+//     connections don't need TLS, so it is disabled there.
+// DB_SSL=on|off overrides this if you ever need to force it either way.
+function resolveDatabaseSsl() {
+  if (process.env.DB_SSL === 'off') return false;
+  if (process.env.DB_SSL === 'on') return { rejectUnauthorized: true };
+
+  try {
+    const host = new URL(process.env.DATABASE_URL).hostname;
+    const isInternal = !host.includes('.');
+    return isInternal ? false : { rejectUnauthorized: true };
+  } catch (e) {
+    return { rejectUnauthorized: true };
+  }
+}
+
 module.exports = {
   isProduction,
   port: process.env.PORT || 3000,
@@ -59,8 +79,5 @@ module.exports = {
   secureCookies: isProduction,
 
   databaseUrl: resolveDatabaseUrl(),
-  // Render's certificates verify cleanly against the public roots, so we keep
-  // verification on rather than the rejectUnauthorized:false many guides suggest.
-  // DB_SSL=off is an escape hatch for a local Postgres with no TLS.
-  databaseSsl: process.env.DB_SSL === 'off' ? false : { rejectUnauthorized: true }
+  databaseSsl: resolveDatabaseSsl()
 };
