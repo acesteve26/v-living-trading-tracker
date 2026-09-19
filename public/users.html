@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Users — NVF Trading Tracker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="topbar" id="topbar"></header>
+
+  <div class="page">
+    <div class="page-header">
+      <h1>Users</h1>
+      <button class="btn" id="btnAddUser">+ Add User</button>
+    </div>
+
+    <div class="card">
+      <table>
+        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
+        <tbody id="usersBody"></tbody>
+      </table>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h3>Company Settings</h3>
+      <form id="settingsForm" class="form-grid">
+        <div class="field">
+          <label>Company / brand name</label>
+          <input id="s_company_name" />
+        </div>
+        <div class="field">
+          <label>Reporting currency</label>
+          <select id="s_currency">
+            <option>AED</option><option>USD</option><option>GBP</option><option>EUR</option><option>SAR</option><option>INR</option>
+          </select>
+        </div>
+        <div class="full modal-actions" style="justify-content:flex-start;">
+          <button class="btn" type="submit">Save Settings</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="userModal">
+    <div class="modal">
+      <h2>Add User</h2>
+      <form id="userForm">
+        <div class="field"><label>Name *</label><input id="u_name" required /></div>
+        <div class="field"><label>Email *</label><input type="email" id="u_email" required /></div>
+        <div class="field"><label>Temporary password *</label><input type="password" id="u_password" required minlength="6" /></div>
+        <div class="field">
+          <label>Role</label>
+          <select id="u_role"><option value="sales">Sales</option><option value="admin">Admin</option></select>
+        </div>
+        <div class="error-text" id="userErr"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn secondary" id="cancelUser">Cancel</button>
+          <button type="submit" class="btn">Create User</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="accountModal">
+    <div class="modal">
+      <h2>My Account</h2>
+      <form id="pwForm">
+        <div class="field"><label>Current password</label><input type="password" id="curPw" required /></div>
+        <div class="field"><label>New password</label><input type="password" id="newPw" required minlength="6" /></div>
+        <div class="error-text" id="pwErr"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn secondary" id="closeAccount">Close</button>
+          <button type="submit" class="btn">Update Password</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/users.js"></script>
+</body>
+</html>

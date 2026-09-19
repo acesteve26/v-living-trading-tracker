@@ -1,0 +1,545 @@
+@import url('/fonts/brand-fonts.css');
+
+/* ==========================================================================
+   NVF LIFESTYLE — brand tokens
+   Palette and typography per NVF Brand Guidelines (see /brand folder).
+   Only approved brand colours are used; lighter tones are opacity tints of
+   Deep Brown rather than new hues.
+   ========================================================================== */
+:root {
+  /* primary palette */
+  --deep-brown: #361C0E;
+  --copper-bark: #734423;
+  --burnt-orange: #963F16;
+  --mineral-sand: #C2AF98;
+  --beige: #EFDDC9;
+  --soft-canvas: #F5F0E7;
+  /* secondary */
+  --cinnabar: #DD4F0A;
+
+  /* semantic */
+  --bg: var(--soft-canvas);
+  --surface: #FFFFFF;
+  --surface-alt: var(--beige);
+  --border: rgba(194, 175, 152, 0.55);
+  --border-strong: rgba(115, 68, 35, 0.35);
+  --text: var(--deep-brown);
+  --text-muted: rgba(54, 28, 14, 0.58);
+  --text-on-dark: var(--soft-canvas);
+  --text-on-dark-muted: rgba(245, 240, 231, 0.65);
+
+  /* type */
+  --font-heading: 'Outfit', 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'Jost', 'Segoe UI', system-ui, sans-serif;
+
+  --radius: 2px;
+  --shadow: 0 1px 2px rgba(54, 28, 14, 0.06);
+  --shadow-lifted: 0 18px 50px rgba(54, 28, 14, 0.28);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 15px;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-heading);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+
+a { color: inherit; }
+
+/* letterspaced micro-label — NVF's signature documentation device */
+.eyebrow,
+.kpi-card .label,
+th,
+.topbar nav a,
+.btn,
+label {
+  font-family: var(--font-body);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-weight: 500;
+  font-size: 10px;
+}
+
+/* ============================ top bar ============================ */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--deep-brown);
+  color: var(--text-on-dark);
+  padding: 0 28px;
+  height: 68px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.topbar .brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* NVF wordmark, tinted from the official artwork via CSS mask */
+.logo-mark {
+  width: 76px;
+  height: 25px;
+  background: var(--soft-canvas);
+  -webkit-mask: url(/img/nvf-wordmark-mask.png) no-repeat left center / contain;
+  mask: url(/img/nvf-wordmark-mask.png) no-repeat left center / contain;
+  flex: none;
+}
+
+.topbar .brand .divider {
+  width: 1px;
+  height: 26px;
+  background: rgba(245, 240, 231, 0.25);
+}
+
+.topbar .brand .app-name {
+  font-family: var(--font-body);
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-on-dark-muted);
+  white-space: nowrap;
+}
+
+.topbar nav { display: flex; gap: 6px; }
+
+.topbar nav a {
+  color: var(--text-on-dark-muted);
+  text-decoration: none;
+  padding: 9px 16px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+}
+.topbar nav a:hover { color: var(--text-on-dark); border-color: rgba(245, 240, 231, 0.22); }
+.topbar nav a.active { color: var(--text-on-dark); border-color: rgba(245, 240, 231, 0.45); }
+
+.topbar .user-area {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--text-on-dark-muted);
+}
+.topbar .user-area .who { color: var(--text-on-dark); }
+
+.topbar .user-area button {
+  background: transparent;
+  border: 1px solid rgba(245, 240, 231, 0.3);
+  color: var(--text-on-dark);
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  cursor: pointer;
+  font-family: var(--font-body);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 10px;
+  font-weight: 500;
+}
+.topbar .user-area button:hover { background: rgba(245, 240, 231, 0.12); }
+
+@media (max-width: 900px) {
+  .topbar {
+    height: auto;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 14px 16px;
+  }
+  .topbar .brand .divider,
+  .topbar .brand .app-name { display: none; }
+  .topbar nav { order: 3; width: 100%; overflow-x: auto; }
+  .topbar nav a { padding: 8px 12px; }
+  .topbar .user-area { gap: 10px; font-size: 11px; }
+}
+
+/* ============================ layout ============================ */
+.page { max-width: 1340px; margin: 0 auto; padding: 34px 28px 72px; }
+
+@media (max-width: 640px) {
+  .page { padding: 24px 16px 56px; }
+  .page-header h1 { font-size: 22px; }
+  .controls { width: 100%; }
+  .controls select { flex: 1; min-width: 0; }
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-bottom: 18px;
+  margin-bottom: 26px;
+  border-bottom: 1px solid var(--border);
+}
+
+.page-header h1 { font-size: 27px; font-weight: 300; letter-spacing: 0.005em; }
+
+.controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+/* ============================ form controls ============================ */
+select, input, textarea {
+  font-family: var(--font-body);
+  font-size: 14px;
+  padding: 9px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+}
+select:focus, input:focus, textarea:focus {
+  outline: none;
+  border-color: var(--burnt-orange);
+  box-shadow: 0 0 0 3px rgba(150, 63, 22, 0.12);
+}
+
+label { color: var(--text-muted); display: block; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--burnt-orange);
+  border-radius: var(--radius);
+  padding: 11px 20px;
+  cursor: pointer;
+  background: var(--burnt-orange);
+  color: var(--soft-canvas);
+  text-decoration: none;
+  font-size: 10px;
+}
+.btn:hover { background: var(--copper-bark); border-color: var(--copper-bark); }
+
+.btn.secondary {
+  background: transparent;
+  color: var(--copper-bark);
+  border-color: var(--border-strong);
+}
+.btn.secondary:hover { background: var(--surface-alt); color: var(--deep-brown); border-color: var(--copper-bark); }
+
+.btn.danger { background: transparent; color: var(--burnt-orange); border-color: var(--burnt-orange); }
+.btn.danger:hover { background: var(--burnt-orange); color: var(--soft-canvas); }
+
+.btn.small { padding: 7px 12px; letter-spacing: 0.12em; }
+
+/* ============================ KPI cards ============================ */
+/* fixed column counts rather than auto-fit: the six KPIs then always fill whole
+   rows instead of leaving a gap in the grid's hairline background */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  margin-bottom: 26px;
+}
+
+@media (max-width: 1080px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 680px) {
+  .kpi-grid { grid-template-columns: 1fr; }
+}
+
+.kpi-card {
+  background: var(--surface);
+  padding: 22px 24px 24px;
+  border-top: 2px solid var(--mineral-sand);
+}
+.kpi-card.weighted { border-top-color: var(--copper-bark); }
+.kpi-card.gp { border-top-color: var(--copper-bark); }
+.kpi-card.won { border-top-color: var(--cinnabar); }
+.kpi-card.gp-won { border-top-color: var(--cinnabar); }
+.kpi-card.lost { border-top-color: var(--burnt-orange); }
+
+.kpi-card .value.negative { color: var(--burnt-orange); }
+
+.kpi-card .label { color: var(--text-muted); display: block; margin-bottom: 12px; }
+
+.kpi-card .value {
+  font-family: var(--font-heading);
+  font-size: 32px;
+  font-weight: 300;
+  line-height: 1.05;
+  letter-spacing: -0.005em;
+  color: var(--deep-brown);
+}
+
+.kpi-card .sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 8px;
+  letter-spacing: 0.02em;
+}
+
+/* ============================ cards & grids ============================ */
+.grid-2 { display: grid; grid-template-columns: 1.85fr 1fr; gap: 20px; margin-bottom: 20px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 20px; }
+
+/* let grid tracks shrink below their table content instead of overflowing the page */
+.grid-2 > *, .grid-3 > * { min-width: 0; }
+
+@media (max-width: 960px) {
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px 24px 24px;
+}
+
+.card h3 {
+  font-family: var(--font-body);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.card canvas { max-height: 290px; }
+
+/* ============================ tables ============================ */
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+
+/* the deals table carries 11 columns — scroll it inside its card rather than
+   letting it stretch the page */
+.table-scroll { overflow-x: auto; }
+.table-scroll table { min-width: 1040px; }
+.table-scroll td:first-child { white-space: nowrap; }
+
+th {
+  text-align: left;
+  color: var(--text-muted);
+  padding: 0 10px 10px;
+  border-bottom: 1px solid var(--border-strong);
+  white-space: nowrap;
+}
+
+td {
+  text-align: left;
+  padding: 13px 10px;
+  border-bottom: 1px solid var(--border);
+  letter-spacing: 0.01em;
+}
+
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: rgba(239, 221, 201, 0.4); }
+
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.muted { color: var(--text-muted); }
+td.negative { color: var(--burnt-orange); }
+
+/* ============================ stage badges ============================ */
+.badge {
+  display: inline-block;
+  padding: 4px 11px;
+  border-radius: var(--radius);
+  font-family: var(--font-body);
+  font-size: 9.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+/* progression from cool sand to cinnabar heat as the deal advances */
+.badge.Lead { background: var(--beige); color: var(--deep-brown); }
+.badge.Qualified { background: var(--mineral-sand); color: var(--deep-brown); }
+.badge.Proposal-Sent { background: var(--copper-bark); color: var(--soft-canvas); }
+.badge.Negotiation { background: var(--burnt-orange); color: var(--soft-canvas); }
+.badge.Won { background: var(--cinnabar); color: var(--soft-canvas); }
+.badge.Lost { background: transparent; color: var(--text-muted); border-color: var(--mineral-sand); }
+
+/* ============================ login ============================ */
+.login-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--deep-brown);
+}
+
+.login-card {
+  background: var(--soft-canvas);
+  width: 100%;
+  max-width: 420px;
+  padding: 48px 44px 40px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lifted);
+  text-align: left;
+}
+
+/* full primary lockup (NVF + LIFESTYLE), in Burnt Orange on Soft Canvas */
+.login-card .logo-lockup {
+  width: 150px;
+  height: 79px;
+  margin: 0 auto 30px;
+  background: var(--burnt-orange);
+  -webkit-mask: url(/img/nvf-logo-mask.png) no-repeat center / contain;
+  mask: url(/img/nvf-logo-mask.png) no-repeat center / contain;
+}
+
+.login-card .tagline {
+  text-align: center;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.26em;
+  color: var(--text-muted);
+  margin: 0 0 34px;
+  font-weight: 500;
+}
+
+.login-card h1 {
+  font-size: 17px;
+  font-weight: 400;
+  text-align: center;
+  margin-bottom: 26px;
+  color: var(--copper-bark);
+}
+
+.field { margin-bottom: 18px; }
+.field label { margin-bottom: 7px; }
+.field input, .field select, .field textarea { width: 100%; }
+
+.error-text {
+  color: var(--burnt-orange);
+  font-size: 13px;
+  margin: 10px 0;
+  min-height: 1.1em;
+  letter-spacing: 0.01em;
+}
+
+.hint-box {
+  margin-top: 24px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--beige);
+  border-left: 2px solid var(--mineral-sand);
+  font-size: 12px;
+  color: var(--copper-bark);
+  line-height: 1.55;
+}
+
+/* ============================ modal ============================ */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(54, 28, 14, 0.55);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 16px;
+  overflow-y: auto;
+  z-index: 50;
+}
+
+.modal {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 32px;
+  width: 100%;
+  max-width: 620px;
+  box-shadow: var(--shadow-lifted);
+}
+
+.modal h2 {
+  font-size: 20px;
+  font-weight: 300;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-grid .full { grid-column: 1 / -1; }
+
+/* live gross-profit readout inside the deal form */
+.gp-readout {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--surface-alt);
+  border-left: 2px solid var(--mineral-sand);
+  border-radius: var(--radius);
+}
+.gp-readout .eyebrow { color: var(--copper-bark); }
+.gp-readout span:last-child {
+  font-family: var(--font-heading);
+  font-size: 17px;
+  font-weight: 400;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.gp-readout span:last-child.positive { color: var(--deep-brown); }
+.gp-readout span:last-child.negative { color: var(--burnt-orange); }
+
+@media (max-width: 620px) {
+  .form-grid { grid-template-columns: 1fr; }
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 26px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.modal-actions .spacer { flex: 1; }
+
+/* ============================ toolbar ============================ */
+.toolbar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 20px;
+  background: var(--surface);
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.toolbar .spacer { flex: 1; }
+
+.meta-line {
+  color: var(--text-muted);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  margin: -14px 0 24px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 44px 20px;
+  color: var(--text-muted);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+
+.hidden { display: none !important; }

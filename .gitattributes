@@ -1,0 +1,12 @@
+# Normalise line endings: checked in as LF, checked out native.
+# Keeps the repo consistent between Windows development and Linux hosting.
+* text=auto eol=lf
+
+# Windows launcher must keep CRLF or cmd.exe can misparse it
+*.cmd text eol=crlf
+
+# Binary assets - never touch these
+*.png binary
+*.ico binary
+*.woff2 binary
+*.pdf binary

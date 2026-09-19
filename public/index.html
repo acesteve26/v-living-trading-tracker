@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Dashboard — NVF Trading Tracker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="topbar" id="topbar"></header>
+
+  <div class="page">
+    <div class="page-header">
+      <h1>Pipeline &amp; Deals Dashboard</h1>
+      <div class="controls">
+        <label for="rangeSelect" style="margin-right:-4px;">Period:</label>
+        <select id="rangeSelect"></select>
+        <span id="customRangeWrap" class="hidden" style="display:flex; gap:6px; align-items:center;">
+          <input type="date" id="fromDate" />
+          <span>to</span>
+          <input type="date" id="toDate" />
+          <button class="btn small" id="applyCustom">Apply</button>
+        </span>
+        <a href="/deals.html" class="btn secondary">Manage Deals</a>
+      </div>
+    </div>
+
+    <div id="rangeLabel" class="meta-line"></div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="label">Open Pipeline Value</div>
+        <div class="value" id="kpiOpenValue">—</div>
+        <div class="sub" id="kpiOpenCount">—</div>
+      </div>
+      <div class="kpi-card weighted">
+        <div class="label">Weighted Pipeline</div>
+        <div class="value" id="kpiWeighted">—</div>
+        <div class="sub">Value × stage probability</div>
+      </div>
+      <div class="kpi-card gp">
+        <div class="label">Pipeline Gross Profit</div>
+        <div class="value" id="kpiOpenGp">—</div>
+        <div class="sub" id="kpiOpenGpSub">—</div>
+      </div>
+      <div class="kpi-card won">
+        <div class="label">Confirmed / Won</div>
+        <div class="value" id="kpiWon">—</div>
+        <div class="sub" id="kpiWonCount">—</div>
+      </div>
+      <div class="kpi-card gp-won">
+        <div class="label">Won Gross Profit</div>
+        <div class="value" id="kpiWonGp">—</div>
+        <div class="sub" id="kpiWonGpSub">—</div>
+      </div>
+      <div class="kpi-card lost">
+        <div class="label">Win Rate</div>
+        <div class="value" id="kpiWinRate">—</div>
+        <div class="sub" id="kpiLostSub">—</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>Monthly Trend — Pipeline vs. Won</h3>
+        <canvas id="chartMonthly"></canvas>
+      </div>
+      <div class="card">
+        <h3>Open Pipeline by Stage</h3>
+        <canvas id="chartStage"></canvas>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>Open Pipeline by Product Category</h3>
+        <canvas id="chartCategory"></canvas>
+      </div>
+      <div class="card">
+        <h3>Top Open Deals</h3>
+        <table>
+          <thead><tr><th>Customer</th><th class="num">Value</th><th>Stage</th></tr></thead>
+          <tbody id="topDealsBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Confirmed Deals Won (in selected period)</h3>
+      <table>
+        <thead><tr><th>Customer</th><th class="num">Value</th><th>Closed Date</th></tr></thead>
+        <tbody id="wonDealsBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="accountModal">
+    <div class="modal">
+      <h2>My Account</h2>
+      <form id="pwForm">
+        <div class="field"><label>Current password</label><input type="password" id="curPw" required /></div>
+        <div class="field"><label>New password</label><input type="password" id="newPw" required minlength="6" /></div>
+        <div class="error-text" id="pwErr"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn secondary" id="closeAccount">Close</button>
+          <button type="submit" class="btn">Update Password</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/vendor/chart.umd.min.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/dashboard.js"></script>
+</body>
+</html>

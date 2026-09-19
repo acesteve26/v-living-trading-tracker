@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Deals — NVF Trading Tracker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="topbar" id="topbar"></header>
+
+  <div class="page">
+    <div class="page-header">
+      <h1>Deals</h1>
+      <button class="btn" id="btnAddDeal">+ Add Deal</button>
+    </div>
+
+    <div class="toolbar">
+      <input type="search" id="searchBox" placeholder="Search customer / contact / description…" style="min-width:240px;" />
+      <select id="filterStage">
+        <option value="">All stages</option>
+        <option>Lead</option><option>Qualified</option><option>Proposal Sent</option>
+        <option>Negotiation</option><option>Won</option><option>Lost</option>
+      </select>
+      <select id="filterCategory">
+        <option value="">All categories</option>
+        <option>Tiles</option><option>Sanitaryware</option><option>Both</option><option>Other</option>
+      </select>
+      <div class="spacer"></div>
+      <span id="resultCount" style="color:var(--text-muted); font-size:13px;"></span>
+    </div>
+
+    <div class="card">
+      <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Customer</th><th>Category</th><th class="num">Value</th><th class="num">Cost</th>
+            <th class="num">Margin %</th><th class="num" id="gpHeader">GP</th><th>Stage</th><th class="num">Prob.</th>
+            <th>Expected Close</th><th>Owner</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="dealsBody"></tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="dealModal">
+    <div class="modal">
+      <h2 id="dealModalTitle">Add Deal</h2>
+      <form id="dealForm">
+        <input type="hidden" id="dealId" />
+        <div class="form-grid">
+          <div class="field full">
+            <label>Customer name *</label>
+            <input id="f_customer_name" required />
+          </div>
+          <div class="field">
+            <label>Contact name</label>
+            <input id="f_contact_name" />
+          </div>
+          <div class="field">
+            <label>Contact email</label>
+            <input type="email" id="f_contact_email" />
+          </div>
+          <div class="field">
+            <label>Contact phone</label>
+            <input id="f_contact_phone" />
+          </div>
+          <div class="field">
+            <label>Product category *</label>
+            <select id="f_product_category">
+              <option>Tiles</option><option>Sanitaryware</option><option>Both</option><option>Other</option>
+            </select>
+          </div>
+          <div class="field">
+            <label id="valueLabel">Deal value *</label>
+            <input type="number" min="0" step="0.01" id="f_value" required />
+          </div>
+          <div class="field">
+            <label id="costLabel">Cost</label>
+            <input type="number" min="0" step="0.01" id="f_cost" placeholder="Leave blank if not known yet" />
+          </div>
+          <div class="full gp-readout" id="gpReadout">
+            <span class="eyebrow">Gross profit</span>
+            <span id="gpReadoutValue">Enter a cost to calculate</span>
+          </div>
+          <div class="field">
+            <label>Stage *</label>
+            <select id="f_stage">
+              <option>Lead</option><option>Qualified</option><option>Proposal Sent</option>
+              <option>Negotiation</option><option>Won</option><option>Lost</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Probability (%)</label>
+            <input type="number" min="0" max="100" id="f_probability" />
+          </div>
+          <div class="field">
+            <label>Expected close date</label>
+            <input type="date" id="f_expected_close_date" />
+          </div>
+          <div class="field">
+            <label>Won/Lost date</label>
+            <input type="date" id="f_won_lost_date" />
+          </div>
+          <div class="field full">
+            <label>Owner</label>
+            <select id="f_owner_id"></select>
+          </div>
+          <div class="field full">
+            <label>Description</label>
+            <textarea id="f_description" rows="2"></textarea>
+          </div>
+          <div class="field full">
+            <label>Notes</label>
+            <textarea id="f_notes" rows="2"></textarea>
+          </div>
+        </div>
+        <div class="error-text" id="dealErr"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn danger hidden" id="btnDeleteDeal">Delete</button>
+          <div class="spacer"></div>
+          <button type="button" class="btn secondary" id="btnCancelDeal">Cancel</button>
+          <button type="submit" class="btn">Save Deal</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="accountModal">
+    <div class="modal">
+      <h2>My Account</h2>
+      <form id="pwForm">
+        <div class="field"><label>Current password</label><input type="password" id="curPw" required /></div>
+        <div class="field"><label>New password</label><input type="password" id="newPw" required minlength="6" /></div>
+        <div class="error-text" id="pwErr"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn secondary" id="closeAccount">Close</button>
+          <button type="submit" class="btn">Update Password</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/deals.js"></script>
+</body>
+</html>

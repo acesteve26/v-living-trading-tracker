@@ -1,0 +1,14 @@
+node_modules/
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+.env
+
+# Brand reference PDFs stay local — the guidelines are permission-controlled and
+# the example document is marked confidential. Keep them out of any repo.
+brand/*.pdf
+
+# Windows shortcut — it stores an absolute path to this machine, so it would be
+# broken for anyone else. The .cmd launcher it points at IS committed.
+*.lnk

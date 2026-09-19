@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>NVF Trading Tracker — Log in</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="logo-lockup" role="img" aria-label="NVF Lifestyle"></div>
+      <p class="tagline">Designing Spaces &middot; Defining Lifestyles</p>
+      <h1>Trading Tracker</h1>
+      <form id="loginForm">
+        <div class="field">
+          <label>Email</label>
+          <input type="email" id="email" required autofocus />
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="password" required />
+        </div>
+        <div class="error-text" id="err"></div>
+        <button class="btn" style="width:100%; justify-content:center; padding:13px;" type="submit">Log in</button>
+      </form>
+      <div class="hint-box">
+        Trouble signing in? Contact your NVF administrator to have your password reset.
+      </div>
+    </div>
+  </div>
+  <script src="/js/api.js"></script>
+  <script>
+    (async () => {
+      const { user } = await api('/api/session');
+      if (user) window.location.href = '/index.html';
+    })();
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      const errEl = document.getElementById('err');
+      errEl.textContent = '';
+      try {
+        await api('/api/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+        window.location.href = '/index.html';
+      } catch (e) {
+        errEl.textContent = e.message;
+      }
+    });
+  </script>
+</body>
+</html>
