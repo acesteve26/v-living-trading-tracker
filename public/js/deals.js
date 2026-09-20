@@ -1,6 +1,7 @@
 let currentUser = null;
 let usersList = [];
 let stageProbabilities = {};
+let openDealIsArchived = false;
 
 function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -20,7 +21,7 @@ function grossProfit(value, cost) {
 // so it is called out rather than shown as a plain date.
 function nextActionCell(d) {
   if (!d.next_action && !d.next_action_date) return '<span class="muted-note">—</span>';
-  const today = new Date().toISOString().slice(0, 10);
+  const today = businessToday();
   const overdue = d.next_action_date && d.next_action_date < today;
   const date = d.next_action_date
     ? `<span class="${overdue ? 'overdue' : ''}">${d.next_action_date}${overdue ? ' (overdue)' : ''}</span>`
@@ -56,7 +57,8 @@ function currentFilters() {
   if (stage) params.set('stage', stage);
   if (category) params.set('category', category);
   if (owner) params.set('ownerId', owner);
-  if (view) params.set('view', view);
+  if (view === 'archived') params.set('archived', 'true');
+  else if (view) params.set('view', view);
 
   document.getElementById('btnClearFilters').classList.toggle('hidden', ![...params.keys()].length);
   return params.toString();
@@ -81,7 +83,7 @@ async function loadDeals() {
           const gp = grossProfit(d.value, d.cost);
           return `
         <tr data-id="${d.id}" class="deal-row" style="cursor:pointer;">
-          <td>${escapeHtml(d.customer_name)}</td>
+          <td>${escapeHtml(d.customer_name)}${d.archived_at ? ' <span class="muted-note">(archived)</span>' : ''}</td>
           <td>${d.product_category}</td>
           <td class="num">${money(d.value)}</td>
           <td class="num muted">${d.cost === null || d.cost === undefined ? '—' : money(d.cost)}</td>
@@ -137,8 +139,10 @@ function setLostReason(value) {
 }
 
 function describeChange(h, labels) {
-  if (h.action === 'created') return `Deal created`;
-  if (h.action === 'deleted') return `Deal deleted`;
+  if (h.action === 'created') return 'Deal created';
+  if (h.action === 'deleted') return 'Deal permanently deleted';
+  if (h.action === 'archived') return 'Deal archived';
+  if (h.action === 'restored') return 'Deal restored from the archive';
   const label = labels[h.field] || h.field;
   const from = h.old_value === null || h.old_value === '' ? 'empty' : h.old_value;
   const to = h.new_value === null || h.new_value === '' ? 'empty' : h.new_value;
@@ -188,7 +192,9 @@ function resetDealForm() {
   document.getElementById('dealForm').reset();
   document.getElementById('dealId').value = '';
   document.getElementById('dealModalTitle').textContent = 'Add Deal';
-  document.getElementById('btnDeleteDeal').classList.add('hidden');
+  document.getElementById('btnArchiveDeal').classList.add('hidden');
+  document.getElementById('btnRestoreDeal').classList.add('hidden');
+  openDealIsArchived = false;
   document.getElementById('dealErr').textContent = '';
   document.getElementById('f_owner_id').value = currentUser.id;
   document.getElementById('f_stage').value = 'Lead';
@@ -221,7 +227,9 @@ async function openDealModal(id) {
     document.getElementById('f_next_action').value = deal.next_action || '';
     document.getElementById('f_next_action_date').value = deal.next_action_date || '';
     setLostReason(deal.lost_reason || null);
-    document.getElementById('btnDeleteDeal').classList.remove('hidden');
+    openDealIsArchived = Boolean(deal.archived_at);
+    document.getElementById('btnArchiveDeal').classList.toggle('hidden', openDealIsArchived);
+    document.getElementById('btnRestoreDeal').classList.toggle('hidden', !openDealIsArchived);
     loadActivity(id);
   }
   syncStageFields();
@@ -318,11 +326,21 @@ function collectDealForm() {
     }
   });
 
-  document.getElementById('btnDeleteDeal').addEventListener('click', async () => {
+  // Archiving hides the deal but keeps the record, so this is recoverable
+  // rather than destructive.
+  document.getElementById('btnArchiveDeal').addEventListener('click', async () => {
     const id = document.getElementById('dealId').value;
     if (!id) return;
-    if (!confirm('Delete this deal? This cannot be undone.')) return;
-    await api(`/api/deals/${id}`, { method: 'DELETE' });
+    if (!confirm('Archive this deal? It will be hidden from the pipeline and reports, and can be restored later.')) return;
+    await api(`/api/deals/${id}/archive`, { method: 'POST' });
+    closeDealModal();
+    await loadDeals();
+  });
+
+  document.getElementById('btnRestoreDeal').addEventListener('click', async () => {
+    const id = document.getElementById('dealId').value;
+    if (!id) return;
+    await api(`/api/deals/${id}/restore`, { method: 'POST' });
     closeDealModal();
     await loadDeals();
   });

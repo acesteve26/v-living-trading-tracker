@@ -440,7 +440,7 @@ app.get(
     const rows = await db.all('SELECT key, value FROM settings');
     const settings = {};
     rows.forEach((r) => (settings[r.key] = r.value));
-    res.json({ settings, stageProbabilities: db.defaultProbabilities });
+    res.json({ settings, stageProbabilities: db.defaultProbabilities, businessTimezone: config.businessTimezone });
   })
 );
 
@@ -472,11 +472,14 @@ app.get(
   '/api/deals',
   requireAuth,
   route(async (req, res) => {
-    const { stage, category, search, ownerId, view } = req.query;
+    const { stage, category, search, ownerId, view, archived } = req.query;
     let sql = `SELECT d.*, u.name AS owner_name
                FROM deals d LEFT JOIN users u ON u.id = d.owner_id
                WHERE 1=1`;
     const params = [];
+
+    // Archived deals stay out of the way unless asked for by name.
+    sql += archived === 'true' ? ' AND d.archived_at IS NOT NULL' : ' AND d.archived_at IS NULL';
 
     if (stage) {
       params.push(stage);
@@ -778,9 +781,83 @@ app.put(
   })
 );
 
+// Archiving hides a deal from every normal view but keeps the record, so a
+// mistake is recoverable. Only an admin can destroy one outright.
+app.post(
+  '/api/deals/:id/archive',
+  requireDealEditor,
+  route(async (req, res) => {
+    const existing = await loadDeal(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Deal not found' });
+    if (existing.archived_at) return res.status(400).json({ error: 'That deal is already archived' });
+
+    await db.transaction(async (client) => {
+      await db.query(
+        'UPDATE deals SET archived_at = NOW(), archived_by = $1, updated_at = NOW() WHERE id = $2',
+        [req.session.user.id, req.params.id],
+        client
+      );
+      await recordHistory(
+        [
+          {
+            deal_id: Number(req.params.id),
+            deal_name: existing.customer_name,
+            changed_by: req.session.user.id,
+            changed_by_name: req.session.user.name,
+            action: 'archived',
+            field: null,
+            old_value: null,
+            new_value: null
+          }
+        ],
+        client
+      );
+    });
+
+    res.json({ ok: true });
+  })
+);
+
+app.post(
+  '/api/deals/:id/restore',
+  requireDealEditor,
+  route(async (req, res) => {
+    const existing = await loadDeal(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Deal not found' });
+    if (!existing.archived_at) return res.status(400).json({ error: 'That deal is not archived' });
+
+    await db.transaction(async (client) => {
+      await db.query(
+        'UPDATE deals SET archived_at = NULL, archived_by = NULL, updated_at = NOW() WHERE id = $1',
+        [req.params.id],
+        client
+      );
+      await recordHistory(
+        [
+          {
+            deal_id: Number(req.params.id),
+            deal_name: existing.customer_name,
+            changed_by: req.session.user.id,
+            changed_by_name: req.session.user.name,
+            action: 'restored',
+            field: null,
+            old_value: null,
+            new_value: null
+          }
+        ],
+        client
+      );
+    });
+
+    res.json({ ok: true });
+  })
+);
+
+// Permanent deletion is reserved for an admin: it destroys a business record
+// and cannot be undone.
 app.delete(
   '/api/deals/:id',
-  requireDealEditor,
+  requireAdmin,
   route(async (req, res) => {
     const existing = await loadDeal(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Deal not found' });
@@ -852,23 +929,24 @@ app.get(
 
     const openDeals = await db.all(
       `SELECT * FROM deals
-       WHERE stage = ANY($1) AND expected_close_date IS NOT NULL
+       WHERE archived_at IS NULL
+         AND stage = ANY($1) AND expected_close_date IS NOT NULL
          AND expected_close_date BETWEEN $2 AND $3`,
       [OPEN_STAGES, from, to]
     );
 
     const openDealsNoDate = await db.all(
-      'SELECT * FROM deals WHERE stage = ANY($1) AND expected_close_date IS NULL',
+      'SELECT * FROM deals WHERE archived_at IS NULL AND stage = ANY($1) AND expected_close_date IS NULL',
       [OPEN_STAGES]
     );
 
     const wonDeals = await db.all(
-      "SELECT * FROM deals WHERE stage = 'Won' AND won_lost_date BETWEEN $1 AND $2",
+      "SELECT * FROM deals WHERE archived_at IS NULL AND stage = 'Won' AND won_lost_date BETWEEN $1 AND $2",
       [from, to]
     );
 
     const lostDeals = await db.all(
-      "SELECT * FROM deals WHERE stage = 'Lost' AND won_lost_date BETWEEN $1 AND $2",
+      "SELECT * FROM deals WHERE archived_at IS NULL AND stage = 'Lost' AND won_lost_date BETWEEN $1 AND $2",
       [from, to]
     );
 
@@ -964,7 +1042,7 @@ app.get(
               (d.expected_close_date IS NULL) AS no_close_date
        FROM deals d
        LEFT JOIN users u ON u.id = d.owner_id
-       WHERE d.stage = ANY($2)
+       WHERE d.archived_at IS NULL AND d.stage = ANY($2)
          AND (
            (d.next_action_date IS NOT NULL AND d.next_action_date < ${BUSINESS_TODAY})
            OR (d.expected_close_date IS NOT NULL AND d.expected_close_date < ${BUSINESS_TODAY})
@@ -1055,19 +1133,19 @@ app.get(
     const [won, lost, created, openDeals] = await Promise.all([
       db.all(
         `SELECT ${dealFields} FROM deals d LEFT JOIN users u ON u.id = d.owner_id
-         WHERE d.stage = 'Won' AND d.won_lost_date BETWEEN $1 AND $2
+         WHERE d.archived_at IS NULL AND d.stage = 'Won' AND d.won_lost_date BETWEEN $1 AND $2
          ORDER BY d.value DESC`,
         [from, to]
       ),
       db.all(
         `SELECT ${dealFields} FROM deals d LEFT JOIN users u ON u.id = d.owner_id
-         WHERE d.stage = 'Lost' AND d.won_lost_date BETWEEN $1 AND $2
+         WHERE d.archived_at IS NULL AND d.stage = 'Lost' AND d.won_lost_date BETWEEN $1 AND $2
          ORDER BY d.value DESC`,
         [from, to]
       ),
       db.all(
         `SELECT ${dealFields} FROM deals d LEFT JOIN users u ON u.id = d.owner_id
-         WHERE d.created_at::date BETWEEN $1 AND $2
+         WHERE d.archived_at IS NULL AND d.created_at::date BETWEEN $1 AND $2
          ORDER BY d.value DESC`,
         [from, to]
       ),
@@ -1075,7 +1153,7 @@ app.get(
       // slice - "what is still live" doesn't depend on the dates chosen.
       db.all(
         `SELECT ${dealFields} FROM deals d LEFT JOIN users u ON u.id = d.owner_id
-         WHERE d.stage = ANY($1) ORDER BY d.value DESC`,
+         WHERE d.archived_at IS NULL AND d.stage = ANY($1) ORDER BY d.value DESC`,
         [OPEN_STAGES]
       )
     ]);
@@ -1201,16 +1279,23 @@ async function connectWithRetry(attempts = 10) {
   }
 }
 
-async function start() {
+async function start(port = PORT) {
   try {
     await connectWithRetry();
   } catch (e) {
     console.error(`\n  DATABASE ERROR: could not connect or set up tables.\n  ${e.message}\n`);
     process.exit(1);
   }
-  app.listen(PORT, () => {
-    console.log(`V Living Trading Tracker running at http://localhost:${PORT}`);
+  return new Promise((resolve) => {
+    const server = app.listen(port, () => {
+      if (port === PORT) console.log(`V Living Trading Tracker running at http://localhost:${port}`);
+      resolve(server);
+    });
   });
 }
 
-start();
+// Only run the server when started directly. Tests import this file and drive
+// the app on their own port instead.
+if (require.main === module) start();
+
+module.exports = { app, start, computeRange };

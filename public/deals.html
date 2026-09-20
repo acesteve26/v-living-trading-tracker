@@ -35,6 +35,7 @@
         <option value="closing_soon">Closing in 30 days</option>
         <option value="no_next_action">No next action set</option>
         <option value="no_close_date">No close date set</option>
+        <option value="archived">Archived</option>
       </select>
       <button type="button" class="btn secondary small" id="btnMyDeals">My Deals</button>
       <button type="button" class="btn secondary small hidden" id="btnClearFilters">Clear</button>
@@ -161,7 +162,8 @@
         </section>
 
         <div class="modal-actions">
-          <button type="button" class="btn danger hidden" id="btnDeleteDeal">Delete</button>
+          <button type="button" class="btn danger hidden" id="btnArchiveDeal">Archive</button>
+          <button type="button" class="btn secondary hidden" id="btnRestoreDeal">Restore</button>
           <div class="spacer"></div>
           <button type="button" class="btn secondary" id="btnCancelDeal">Cancel</button>
           <button type="submit" class="btn">Save Deal</button>

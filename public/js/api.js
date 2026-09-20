@@ -37,6 +37,13 @@ const moneyCompact = (n) => {
   }
 };
 
+// Matches the server: "today" is today where the business is, not wherever
+// the browser happens to be, so an overdue date is never off by one.
+function businessToday() {
+  const tz = window.__APP_TZ__ || 'Asia/Dubai';
+  return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
 async function requireSession() {
   const { user } = await api('/api/session');
   if (!user) {
@@ -150,8 +157,10 @@ function forcePasswordChange() {
 
 async function loadCurrency() {
   try {
-    const { settings } = await api('/api/settings');
+    const data = await api('/api/settings');
+    const settings = data.settings;
     window.__APP_CURRENCY__ = settings.currency || 'AED';
+    window.__APP_TZ__ = data.businessTimezone || 'Asia/Dubai';
     return settings;
   } catch (e) {
     window.__APP_CURRENCY__ = 'AED';

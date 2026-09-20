@@ -20,8 +20,18 @@ pg.types.setTypeParser(pg.types.builtins.DATE, (v) => v);
 // BIGINT (what COUNT returns) also arrives as a string.
 pg.types.setTypeParser(pg.types.builtins.INT8, (v) => (v === null ? null : parseInt(v, 10)));
 
+// The schema is set as a connection option rather than by running SET on every
+// new connection: Postgres applies it as the session starts, so there is no
+// window where a query could run against the wrong schema.
+function connectionStringFor(url, schema) {
+  if (schema === 'public') return url;
+  const parsed = new URL(url);
+  parsed.searchParams.set('options', `-c search_path=${schema},public`);
+  return parsed.toString();
+}
+
 const pool = new pg.Pool({
-  connectionString: config.databaseUrl,
+  connectionString: connectionStringFor(config.databaseUrl, config.dbSchema),
   ssl: config.databaseSsl,
   max: 10,
   idleTimeoutMillis: 30000,
@@ -31,6 +41,7 @@ const pool = new pg.Pool({
 pool.on('error', (err) => {
   console.error('Unexpected database error on an idle connection:', err.message);
 });
+
 
 // Convenience wrappers mirroring how the app used the SQLite driver. Each takes
 // an optional executor so the same call works inside a transaction.
@@ -150,6 +161,19 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS next_action_date DATE;
 -- Free text rather than a constrained list: the suggestions in the UI cover the
 -- common cases, but a reason worth recording shouldn't be blocked by a CHECK.
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS lost_reason TEXT;
+
+-- Deals are archived rather than destroyed. A salesperson removing a deal is
+-- usually tidying up, not intending to erase a business record, so the row
+-- stays and is simply hidden from normal views.
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS archived_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS deals_archived_idx ON deals (archived_at);
+
+-- history gained two more actions alongside archiving
+ALTER TABLE deal_history DROP CONSTRAINT IF EXISTS deal_history_action_check;
+ALTER TABLE deal_history ADD CONSTRAINT deal_history_action_check
+  CHECK (action IN ('created','updated','deleted','archived','restored'));
 
 CREATE INDEX IF NOT EXISTS deals_next_action_idx ON deals (next_action_date);
 `;

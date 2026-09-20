@@ -87,5 +87,9 @@ module.exports = {
   secureCookies: isProduction,
 
   databaseUrl: resolveDatabaseUrl(),
-  databaseSsl: resolveDatabaseSsl()
+  databaseSsl: resolveDatabaseSsl(),
+
+  // Tests point this at a throwaway schema in the same database, so they can
+  // create and drop real tables without touching development data.
+  dbSchema: process.env.DB_SCHEMA || 'public'
 };
