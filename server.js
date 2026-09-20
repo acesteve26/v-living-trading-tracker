@@ -143,9 +143,24 @@ app.post('/api/logout', (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
 });
 
-app.get('/api/session', (req, res) => {
-  res.json({ user: req.session.user || null });
-});
+// Re-read the user from the database rather than trusting what the session
+// stored at login. Sessions survive deploys, so a stored copy goes stale: it
+// misses fields added since, keeps a role that has since been changed, and
+// lets a deactivated account keep working until the session expires.
+app.get(
+  '/api/session',
+  route(async (req, res) => {
+    if (!req.session.user) return res.json({ user: null });
+
+    const fresh = await db.one('SELECT * FROM users WHERE id = $1', [req.session.user.id]);
+    if (!fresh || !fresh.active) {
+      return req.session.destroy(() => res.json({ user: null }));
+    }
+
+    req.session.user = publicUser(fresh);
+    res.json({ user: req.session.user });
+  })
+);
 
 app.post(
   '/api/change-password',
