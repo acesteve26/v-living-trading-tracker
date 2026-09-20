@@ -331,7 +331,7 @@ app.get(
   '/api/deals',
   requireAuth,
   route(async (req, res) => {
-    const { stage, category, search, ownerId } = req.query;
+    const { stage, category, search, ownerId, view } = req.query;
     let sql = `SELECT d.*, u.name AS owner_name
                FROM deals d LEFT JOIN users u ON u.id = d.owner_id
                WHERE 1=1`;
@@ -355,6 +355,21 @@ app.get(
                  OR d.contact_name ILIKE $${params.length}
                  OR d.description ILIKE $${params.length})`;
     }
+    // saved views for the things a salesperson actually looks for. All three are
+    // about live work, so each is limited to open stages.
+    if (view === 'overdue' || view === 'closing_soon' || view === 'no_next_action') {
+      params.push(OPEN_STAGES);
+      sql += ` AND d.stage = ANY($${params.length})`;
+
+      if (view === 'overdue') {
+        sql += ' AND d.next_action_date IS NOT NULL AND d.next_action_date < CURRENT_DATE';
+      } else if (view === 'closing_soon') {
+        sql += ' AND d.expected_close_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 30';
+      } else {
+        sql += ' AND d.next_action_date IS NULL';
+      }
+    }
+
     sql += ' ORDER BY d.updated_at DESC';
 
     res.json({ deals: await db.all(sql, params) });
@@ -383,6 +398,7 @@ const TRACKED_FIELDS = {
   probability: 'Probability',
   expected_close_date: 'Expected close',
   won_lost_date: 'Won/Lost date',
+  lost_reason: 'Lost reason',
   owner_id: 'Owner',
   next_action: 'Next action',
   next_action_date: 'Next action due'
@@ -455,8 +471,8 @@ app.post(
       `INSERT INTO deals
         (customer_name, contact_name, contact_email, contact_phone, product_category,
          description, value, cost, stage, probability, expected_close_date,
-         won_lost_date, owner_id, notes, next_action, next_action_date)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+         won_lost_date, owner_id, notes, next_action, next_action_date, lost_reason)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
        RETURNING id`,
       [
         b.customer_name.trim(),
@@ -474,7 +490,10 @@ app.post(
         b.owner_id || req.session.user.id,
         b.notes || null,
         b.next_action || null,
-        b.next_action_date || null
+        b.next_action_date || null,
+        // only meaningful on a lost deal; cleared otherwise so a reopened deal
+        // doesn't keep a stale explanation
+        b.stage === 'Lost' ? b.lost_reason || null : null
       ]
     );
 
@@ -519,8 +538,8 @@ app.put(
          product_category = $5, description = $6, value = $7, cost = $8, stage = $9,
          probability = $10, expected_close_date = $11, won_lost_date = $12,
          owner_id = $13, notes = $14, next_action = $15, next_action_date = $16,
-         updated_at = NOW()
-       WHERE id = $17`,
+         lost_reason = $17, updated_at = NOW()
+       WHERE id = $18`,
       [
         b.customer_name.trim(),
         b.contact_name || null,
@@ -538,6 +557,7 @@ app.put(
         b.notes || null,
         b.next_action || null,
         b.next_action_date || null,
+        b.stage === 'Lost' ? b.lost_reason || null : null,
         req.params.id
       ]
     );

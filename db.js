@@ -123,6 +123,9 @@ ALTER TABLE users ADD CONSTRAINT users_role_check
   CHECK (role IN ('admin','management','accounts','sales'));
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS next_action TEXT;
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS next_action_date DATE;
+-- Free text rather than a constrained list: the suggestions in the UI cover the
+-- common cases, but a reason worth recording shouldn't be blocked by a CHECK.
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS lost_reason TEXT;
 
 CREATE INDEX IF NOT EXISTS deals_next_action_idx ON deals (next_action_date);
 `;

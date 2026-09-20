@@ -82,7 +82,7 @@ function renderNeedsAttention(items) {
         ? `${escapeHtml(d.next_action)}${d.next_action_date ? `<div class="muted-note">due ${d.next_action_date}</div>` : ''}`
         : '<span class="muted-note">No next action set</span>';
       return `<tr>
-        <td>${escapeHtml(d.customer_name)}</td>
+        <td>${dealLink(d)}</td>
         <td class="num">${money(d.value)}</td>
         <td><span class="badge ${d.stage.replace(/\s+/g, '-')}">${d.stage}</span></td>
         <td>${why}</td>
@@ -203,16 +203,22 @@ async function loadDashboard() {
     ? data.topOpenDeals
         .map(
           (d) =>
-            `<tr><td>${escapeHtml(d.customer_name)}</td><td class="num">${money(d.value)}</td><td><span class="badge ${d.stage.replace(/\s+/g, '-')}">${d.stage}</span></td></tr>`
+            `<tr><td>${dealLink(d)}</td><td class="num">${money(d.value)}</td><td><span class="badge ${d.stage.replace(/\s+/g, '-')}">${d.stage}</span></td></tr>`
         )
         .join('')
     : '<tr><td colspan="3" class="empty-state">No open deals in this period</td></tr>';
 
   document.getElementById('wonDealsBody').innerHTML = data.recentWon.length
     ? data.recentWon
-        .map((d) => `<tr><td>${escapeHtml(d.customer_name)}</td><td class="num">${money(d.value)}</td><td>${d.won_lost_date || '—'}</td></tr>`)
+        .map((d) => `<tr><td>${dealLink(d)}</td><td class="num">${money(d.value)}</td><td>${d.won_lost_date || '—'}</td></tr>`)
         .join('')
     : '<tr><td colspan="3" class="empty-state">No confirmed deals in this period</td></tr>';
+}
+
+// Real anchors rather than click handlers: keyboard accessible and
+// open-in-new-tab, with no extra code.
+function dealLink(d) {
+  return `<a class="deal-link" href="/deals.html?deal=${d.id}">${escapeHtml(d.customer_name)}</a>`;
 }
 
 function escapeHtml(s) {

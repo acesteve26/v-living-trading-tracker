@@ -594,6 +594,57 @@ td.negative { color: var(--burnt-orange); }
 
 .overdue { color: var(--burnt-orange); font-weight: 500; }
 
+/* ============================ deal links & activity ============================ */
+.deal-link {
+  color: var(--copper-bark);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+.deal-link:hover,
+.deal-link:focus-visible { color: var(--burnt-orange); border-bottom-color: currentColor; }
+
+.activity {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.activity-title {
+  font-family: var(--font-body);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin: 0 0 14px;
+}
+
+.activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 16px;
+  max-height: 220px;
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+}
+
+.activity-item { position: relative; padding: 0 0 14px; font-size: 13px; }
+.activity-item::before {
+  content: '';
+  position: absolute;
+  left: -20px;
+  top: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mineral-sand);
+}
+.activity-item.created::before { background: var(--burnt-orange); }
+.activity-item.deleted::before { background: var(--deep-brown); }
+
+.activity-what { color: var(--text); line-height: 1.45; }
+.activity-who { color: var(--text-muted); font-size: 12px; margin-top: 3px; }
+
 .field-hint {
   margin: 6px 0 0;
   font-size: 12px;

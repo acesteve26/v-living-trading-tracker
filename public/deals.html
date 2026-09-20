@@ -26,6 +26,17 @@
         <option value="">All categories</option>
         <option>Tiles</option><option>Sanitaryware</option><option>Both</option><option>Other</option>
       </select>
+      <select id="filterOwner">
+        <option value="">All owners</option>
+      </select>
+      <select id="filterView">
+        <option value="">All deals</option>
+        <option value="overdue">Action overdue</option>
+        <option value="closing_soon">Closing in 30 days</option>
+        <option value="no_next_action">No next action set</option>
+      </select>
+      <button type="button" class="btn secondary small" id="btnMyDeals">My Deals</button>
+      <button type="button" class="btn secondary small hidden" id="btnClearFilters">Clear</button>
       <div class="spacer"></div>
       <span id="resultCount" style="color:var(--text-muted); font-size:13px;"></span>
     </div>
@@ -105,6 +116,21 @@
             <label>Won/Lost date</label>
             <input type="date" id="f_won_lost_date" />
           </div>
+          <div class="field full hidden" id="lostReasonWrap">
+            <label for="f_lost_reason_choice">Why was it lost?</label>
+            <select id="f_lost_reason_choice">
+              <option value="">Select a reason…</option>
+              <option>Price</option>
+              <option>Lead time / availability</option>
+              <option>Lost to competitor</option>
+              <option>Specification changed</option>
+              <option>Project cancelled or postponed</option>
+              <option>No decision made</option>
+              <option value="__other">Other…</option>
+            </select>
+            <input id="f_lost_reason_other" class="hidden" style="margin-top:8px;" placeholder="Describe the reason" />
+            <p class="field-hint">Recorded so you can see later why deals are being lost.</p>
+          </div>
           <div class="field">
             <label>Next action</label>
             <input id="f_next_action" placeholder="e.g. Send revised quote" />
@@ -127,6 +153,12 @@
           </div>
         </div>
         <div class="error-text" id="dealErr"></div>
+
+        <section class="activity hidden" id="activitySection">
+          <h3 class="activity-title">Activity</h3>
+          <ol class="activity-list" id="activityList"></ol>
+        </section>
+
         <div class="modal-actions">
           <button type="button" class="btn danger hidden" id="btnDeleteDeal">Delete</button>
           <div class="spacer"></div>
