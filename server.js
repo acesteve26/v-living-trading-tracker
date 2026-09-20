@@ -2,6 +2,7 @@ const path = require('path');
 const express = require('express');
 const session = require('express-session');
 const rateLimit = require('express-rate-limit');
+const helmet = require('helmet');
 const bcrypt = require('bcryptjs');
 const config = require('./config');
 const db = require('./db');
@@ -13,7 +14,39 @@ const OPEN_STAGES = ['Lead', 'Qualified', 'Proposal Sent', 'Negotiation'];
 // behind Render's HTTPS proxy, trust the forwarded protocol so secure cookies work
 if (config.isProduction) app.set('trust proxy', 1);
 
-app.use(express.json());
+// Security headers. Everything the app loads - fonts, Chart.js, logo, styles -
+// is served from this origin, so the policy can forbid outside sources entirely.
+// Inline scripts are blocked outright, which is why the login page's script
+// lives in its own file. Inline *styles* are still allowed: the markup uses
+// style attributes in a few places, and blocking them buys little once scripts
+// are locked down.
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:'],
+        fontSrc: ["'self'"],
+        connectSrc: ["'self'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+        baseUri: ["'self'"],
+        objectSrc: ["'none'"],
+        // only meaningful over HTTPS, so not applied to local development
+        ...(config.isProduction ? { upgradeInsecureRequests: [] } : {})
+      }
+    },
+    // one year, and only sent in production where the app is actually on HTTPS
+    hsts: config.isProduction ? { maxAge: 31536000, includeSubDomains: true } : false,
+    referrerPolicy: { policy: 'same-origin' },
+    crossOriginEmbedderPolicy: false
+  })
+);
+
+app.use(express.json({ limit: '100kb' }));
 
 // Sessions live in Postgres, not memory: Render restarts the container on every
 // deploy, and an in-memory store would sign everyone out each time.
@@ -67,6 +100,35 @@ function isValidDate(value) {
   return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
 }
 
+// ---------- session helpers ----------
+// A new session id at sign-in, so a session id captured before login (by a
+// shared link, a proxy, or an earlier visit) cannot be reused afterwards.
+function regenerateSession(req) {
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((err) => (err ? reject(err) : resolve()));
+  });
+}
+
+function saveSession(req) {
+  return new Promise((resolve, reject) => {
+    req.session.save((err) => (err ? reject(err) : resolve()));
+  });
+}
+
+// Ends every signed-in session belonging to a user, so a password reset or a
+// deactivation actually removes access rather than waiting for expiry.
+// connect-pg-simple stores the session as JSON, so the user id is read out of it.
+async function revokeSessionsForUser(userId, exceptSid) {
+  const params = [String(userId)];
+  let sql = `DELETE FROM user_sessions WHERE (sess::jsonb -> 'user' ->> 'id') = $1`;
+  if (exceptSid) {
+    params.push(exceptSid);
+    sql += ` AND sid <> $2`;
+  }
+  const result = await db.query(sql, params);
+  return result.rowCount;
+}
+
 // ---------- auth helpers ----------
 function requireAuth(req, res, next) {
   if (!req.session.user) return res.status(401).json({ error: 'Not logged in' });
@@ -117,12 +179,14 @@ function publicUser(u) {
 // only in the UI, so it can't be sidestepped by calling the API directly.
 const PASSWORD_CHANGE_EXEMPT = new Set(['/api/session', '/api/change-password', '/api/logout', '/api/login']);
 
-app.use('/api', (req, res, next) => {
+// NOTE: registered further down, after the current user is refreshed, so it
+// tests the live flag rather than whatever the session stored at sign-in.
+function passwordChangeGate(req, res, next) {
   if (!req.session.user || !req.session.user.mustChangePassword) return next();
   const pathWithoutQuery = req.originalUrl.split('?')[0];
   if (PASSWORD_CHANGE_EXEMPT.has(pathWithoutQuery)) return next();
   res.status(403).json({ error: 'Set a new password before continuing.', mustChangePassword: true });
-});
+}
 
 // ---------- rate limiting ----------
 // The app is on the public internet, so the login is reachable by anyone. Only
@@ -149,6 +213,30 @@ const apiLimiter = rateLimit({
 
 app.use('/api', apiLimiter);
 
+// Re-read the signed-in user on every API request, so role changes and
+// deactivations take effect immediately rather than at the next page load.
+// Previously only /api/session refreshed, which left a demoted user editing
+// deals until they happened to reload. One indexed lookup per request is
+// cheap at this scale; if that ever stops being true, a session_version column
+// would let most requests skip the query.
+app.use(
+  '/api',
+  route(async (req, res, next) => {
+    if (!req.session.user) return next();
+
+    const fresh = await db.one('SELECT * FROM users WHERE id = $1', [req.session.user.id]);
+    if (!fresh || !fresh.active) {
+      return req.session.destroy(() => res.status(401).json({ error: 'Your access has been removed. Please sign in again.' }));
+    }
+
+    req.session.user = publicUser(fresh);
+    next();
+  })
+);
+
+// runs after the refresh above, so it sees the live must-change flag
+app.use('/api', passwordChangeGate);
+
 // ---------- auth routes ----------
 app.post(
   '/api/login',
@@ -164,7 +252,12 @@ app.post(
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
+    // new session id at sign-in, then saved before responding so the browser
+    // gets the cookie for the session that actually holds the login
+    await regenerateSession(req);
     req.session.user = publicUser(user);
+    await saveSession(req);
+
     res.json({ user: req.session.user });
   })
 );
@@ -208,9 +301,14 @@ app.post(
       'UPDATE users SET password_hash = $1, must_change_password = FALSE WHERE id = $2',
       [bcrypt.hashSync(newPassword, 10), user.id]
     );
-    // the session carries the flag, so clear it there too or the block persists
+
+    // Changing a password should end any other session using the old one -
+    // on a shared or lost device, for instance. The current session is kept so
+    // the person isn't signed out of the browser they just used.
+    const ended = await revokeSessionsForUser(user.id, req.sessionID);
+
     req.session.user.mustChangePassword = false;
-    res.json({ ok: true });
+    res.json({ ok: true, otherSessionsEnded: ended });
   })
 );
 
@@ -299,13 +397,23 @@ app.patch(
       throw e;
     }
 
+    // An admin resetting someone's password, or switching them off, should end
+    // that person's sessions straight away rather than leaving an open tab
+    // working until it expires.
+    let sessionsEnded = 0;
+    const passwordWasReset = Boolean(newPassword);
+    const wasDeactivated = user.active && !nextActive;
+    if (passwordWasReset || wasDeactivated) {
+      sessionsEnded = await revokeSessionsForUser(req.params.id, isSelf ? req.sessionID : null);
+    }
+
     // keep the live session in step if the admin edited their own record
     if (isSelf) {
       const updated = await db.one('SELECT * FROM users WHERE id = $1', [req.params.id]);
       req.session.user = publicUser(updated);
     }
 
-    res.json({ ok: true });
+    res.json({ ok: true, sessionsEnded });
   })
 );
 
@@ -318,6 +426,8 @@ app.delete(
     }
     // deals keep their history; the foreign key nulls the owner automatically
     await db.query('DELETE FROM users WHERE id = $1', [req.params.id]);
+    // and any session they still had open stops working immediately
+    await revokeSessionsForUser(req.params.id);
     res.json({ ok: true });
   })
 );
