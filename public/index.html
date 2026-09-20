@@ -62,7 +62,7 @@
 
     <div class="card attention-card" id="attentionCard">
       <h3>Needs Attention <span class="card-note">— across all open deals, not just this period</span></h3>
-      <div class="table-scroll">
+      <div class="table-scroll wide">
         <table>
           <thead>
             <tr><th>Customer</th><th class="num">Value</th><th>Stage</th><th>Why</th><th>Next action</th><th>Owner</th></tr>
@@ -74,7 +74,7 @@
 
     <div class="grid-2">
       <div class="card">
-        <h3>Monthly Trend — Pipeline vs. Won</h3>
+        <h3>Pipeline by Expected Close Month vs. Won <span class="card-note">— pipeline is a forecast, won is actual</span></h3>
         <canvas id="chartMonthly"></canvas>
       </div>
       <div class="card">
@@ -90,19 +90,23 @@
       </div>
       <div class="card">
         <h3>Top Open Deals</h3>
-        <table>
-          <thead><tr><th>Customer</th><th class="num">Value</th><th>Stage</th></tr></thead>
-          <tbody id="topDealsBody"></tbody>
-        </table>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Customer</th><th class="num">Value</th><th>Stage</th></tr></thead>
+            <tbody id="topDealsBody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
     <div class="card">
       <h3>Confirmed Deals Won (in selected period)</h3>
-      <table>
-        <thead><tr><th>Customer</th><th class="num">Value</th><th>Closed Date</th></tr></thead>
-        <tbody id="wonDealsBody"></tbody>
-      </table>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Customer</th><th class="num">Value</th><th>Closed Date</th></tr></thead>
+          <tbody id="wonDealsBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 

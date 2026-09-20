@@ -127,7 +127,8 @@ async function loadReport() {
             <td>${escapeHtml(p.name)}</td>
             <td class="num">${p.wonCount}</td>
             <td class="num">${money(p.wonValue)}</td>
-            <td class="num">${p.wonGp ? money(p.wonGp) : '—'}</td>
+            <td class="num">${p.wonCostedCount ? money(p.wonGp) : '—'}</td>
+            <td class="num muted">${p.wonCount ? (p.wonCostedCount === p.wonCount ? 'all costed' : p.wonCostedCount + ' of ' + p.wonCount) : '—'}</td>
             <td class="num">${p.lostCount}</td>
             <td class="num">${p.winRate === null ? '—' : p.winRate.toFixed(0) + '%'}</td>
             <td class="num">${p.newCount}</td>
@@ -135,7 +136,7 @@ async function loadReport() {
           </tr>`
         )
         .join('')
-    : emptyRow(8, 'No activity in this period');
+    : emptyRow(9, 'No activity in this period');
 
   document.getElementById('wonBody').innerHTML = data.won.length
     ? data.won

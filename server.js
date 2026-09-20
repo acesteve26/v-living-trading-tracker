@@ -859,7 +859,7 @@ app.get(
     const bucket = (name) => {
       const key = name || 'Unassigned';
       if (!people.has(key)) {
-        people.set(key, { name: key, wonCount: 0, wonValue: 0, wonGp: 0, lostCount: 0, lostValue: 0, newCount: 0, newValue: 0, openCount: 0, openValue: 0 });
+        people.set(key, { name: key, wonCount: 0, wonValue: 0, wonGp: 0, wonCostedCount: 0, lostCount: 0, lostValue: 0, newCount: 0, newValue: 0, openCount: 0, openValue: 0 });
       }
       return people.get(key);
     };
@@ -867,7 +867,11 @@ app.get(
       const p = bucket(d.owner_name);
       p.wonCount += 1;
       p.wonValue += d.value;
-      if (d.cost !== null && d.cost !== undefined) p.wonGp += d.value - d.cost;
+      // count how many are costed, so partial GP is never read as complete
+      if (d.cost !== null && d.cost !== undefined) {
+        p.wonGp += d.value - d.cost;
+        p.wonCostedCount += 1;
+      }
     });
     lost.forEach((d) => {
       const p = bucket(d.owner_name);

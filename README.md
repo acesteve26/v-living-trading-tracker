@@ -169,7 +169,7 @@ The old SQLite file in `data/` is kept only so [scripts/migrate-from-sqlite.js](
 - Reporting currency is a single app-wide setting (AED by default), not per-deal — simplest approach unless you're regularly dealing in multiple currencies at once.
 - Single light theme only, matching the brand's warm/light identity — no dark mode, to avoid rendering the brand in unapproved tones.
 - Login sessions are stored in Postgres (`user_sessions` table), so they survive restarts and deploys.
-- No audit trail / deal history yet (just current state, plus created/updated timestamps). Can be added if you want a change log per deal.
+- Deal history is recorded: every create, field-level change and delete, with who and when, in the `deal_history` table and exposed at `/api/deals/:id/history`. It only describes changes made after that feature shipped - history cannot be backfilled.
 - Cost is a single figure per deal, not a line-item breakdown — enough for margin reporting, but it won't itemise freight, duty or landed cost separately. Say the word if you need that split out.
 
 ## Project structure

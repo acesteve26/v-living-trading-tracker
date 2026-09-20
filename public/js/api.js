@@ -54,7 +54,7 @@ function renderTopbar(activePage, user) {
 
   el.innerHTML = `
     <div class="brand">
-      <a href="/index.html" class="logo-mark">V Living</a>
+      <a href="/index.html" class="logo-mark" aria-label="V Living — go to dashboard">V Living</a>
       <span class="divider"></span>
       <span class="app-name">Trading Tracker</span>
     </div>

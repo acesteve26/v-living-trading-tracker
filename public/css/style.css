@@ -24,7 +24,7 @@
   --border: rgba(194, 175, 152, 0.55);
   --border-strong: rgba(115, 68, 35, 0.35);
   --text: var(--deep-brown);
-  --text-muted: rgba(54, 28, 14, 0.58);
+  --text-muted: rgba(54, 28, 14, 0.72);
   --text-on-dark: var(--soft-canvas);
   --text-on-dark-muted: rgba(245, 240, 231, 0.65);
 
@@ -67,9 +67,11 @@ th,
 label {
   font-family: var(--font-body);
   text-transform: uppercase;
-  letter-spacing: 0.18em;
+  /* 11px with slightly tighter tracking: the brand's letterspaced caps device
+     is kept, but readable for someone in the tracker all day */
+  letter-spacing: 0.14em;
   font-weight: 500;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 /* ============================ top bar ============================ */
@@ -92,19 +94,18 @@ label {
   gap: 16px;
 }
 
-/* V Living wordmark — typographic placeholder in the brand heading face.
-   Swap for real artwork when it's ready: set a fixed width/height and use
-   `-webkit-mask`/`mask` with the logo file, as the previous artwork did. */
+/* Official V Living lockup. On the dark bar it is tinted Soft Canvas through a
+   CSS mask; on light backgrounds the full-colour file is used instead, which
+   keeps the Mineral Sand degree mark distinct from the Burnt Orange letters. */
 .logo-mark {
-  font-family: var(--font-heading);
-  font-weight: 200;
-  font-size: 21px;
-  line-height: 1;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--soft-canvas);
-  text-decoration: none;
-  white-space: nowrap;
+  display: block;
+  width: 134px;
+  height: 18px;
+  background: var(--soft-canvas);
+  -webkit-mask: url(/img/vliving-logo-mask.png) no-repeat left center / contain;
+  mask: url(/img/vliving-logo-mask.png) no-repeat left center / contain;
+  text-indent: -9999px;
+  overflow: hidden;
   flex: none;
 }
 
@@ -117,7 +118,7 @@ label {
 .topbar .brand .app-name {
   font-family: var(--font-body);
   text-transform: uppercase;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.16em;
   font-size: 11px;
   font-weight: 400;
   color: var(--text-on-dark-muted);
@@ -139,11 +140,12 @@ label {
 .topbar .user-area {
   display: flex;
   align-items: center;
+  flex: none;
   gap: 14px;
   font-size: 12px;
   color: var(--text-on-dark-muted);
 }
-.topbar .user-area .who { color: var(--text-on-dark); }
+.topbar .user-area .who { color: var(--text-on-dark); white-space: nowrap; }
 
 .topbar .user-area button {
   background: transparent;
@@ -154,13 +156,13 @@ label {
   cursor: pointer;
   font-family: var(--font-body);
   text-transform: uppercase;
-  letter-spacing: 0.16em;
-  font-size: 10px;
+  letter-spacing: 0.14em;
+  font-size: 11px;
   font-weight: 500;
 }
 .topbar .user-area button:hover { background: rgba(245, 240, 231, 0.12); }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .topbar {
     height: auto;
     flex-wrap: wrap;
@@ -228,7 +230,7 @@ label { color: var(--text-muted); display: block; }
   background: var(--burnt-orange);
   color: var(--soft-canvas);
   text-decoration: none;
-  font-size: 10px;
+  font-size: 11px;
 }
 .btn:hover { background: var(--copper-bark); border-color: var(--copper-bark); }
 
@@ -315,8 +317,8 @@ label { color: var(--text-muted); display: block; }
 .card h3 {
   font-family: var(--font-body);
   text-transform: uppercase;
-  letter-spacing: 0.18em;
-  font-size: 10px;
+  letter-spacing: 0.14em;
+  font-size: 11px;
   font-weight: 500;
   color: var(--text-muted);
   padding-bottom: 14px;
@@ -329,11 +331,12 @@ label { color: var(--text-muted); display: block; }
 /* ============================ tables ============================ */
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 
-/* the deals table carries 11 columns — scroll it inside its card rather than
-   letting it stretch the page */
+/* Any table can scroll inside its card rather than stretching the page. Only
+   the genuinely wide ones get a minimum width forced on them - applying it to
+   every table would stop narrow ones shrinking on small screens. */
 .table-scroll { overflow-x: auto; }
-.table-scroll table { min-width: 1040px; }
-.table-scroll td:first-child { white-space: nowrap; }
+.table-scroll.wide table { min-width: 1040px; }
+.table-scroll.wide td:first-child { white-space: nowrap; }
 
 th {
   text-align: left;
@@ -363,7 +366,7 @@ td.negative { color: var(--burnt-orange); }
   padding: 4px 11px;
   border-radius: var(--radius);
   font-family: var(--font-body);
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.14em;
@@ -375,7 +378,15 @@ td.negative { color: var(--burnt-orange); }
 .badge.Qualified { background: var(--mineral-sand); color: var(--deep-brown); }
 .badge.Proposal-Sent { background: var(--copper-bark); color: var(--soft-canvas); }
 .badge.Negotiation { background: var(--burnt-orange); color: var(--soft-canvas); }
-.badge.Won { background: var(--cinnabar); color: var(--soft-canvas); }
+/* Cinnabar can't carry small text at AA (3.9:1 at best, either text colour), so
+   Won takes Deep Brown - the terminal state, and the darkest tone - while
+   keeping a Cinnabar edge so the stage ramp still ends on the hottest colour. */
+.badge.Won {
+  background: var(--deep-brown);
+  color: var(--soft-canvas);
+  box-shadow: inset 3px 0 0 var(--cinnabar);
+  padding-left: 13px;
+}
 .badge.Lost { background: transparent; color: var(--text-muted); border-color: var(--mineral-sand); }
 
 /* ============================ login ============================ */
@@ -398,33 +409,30 @@ td.negative { color: var(--burnt-orange); }
   text-align: left;
 }
 
-/* full lockup, in Burnt Orange on Soft Canvas — typographic placeholder */
+/* full-colour lockup on the light login card, so the degree mark keeps its own colour */
 .login-card .logo-lockup {
-  margin: 0 auto 34px;
+  margin: 0 auto 32px;
   text-align: center;
-  color: var(--burnt-orange);
 }
 
-.login-card .logo-lockup .mark {
+.login-card .logo-lockup img {
   display: block;
-  font-family: var(--font-heading);
-  font-weight: 200;
-  font-size: 38px;
-  line-height: 1;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  text-indent: 0.16em; /* offset the trailing letter-space so it reads centred */
+  width: 232px;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
 }
 
 .login-card .logo-lockup .sub {
   display: block;
-  margin-top: 10px;
+  margin-top: 14px;
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.42em;
+  letter-spacing: 0.38em;
   text-transform: uppercase;
-  text-indent: 0.42em;
+  text-indent: 0.38em;
+  color: var(--copper-bark);
 }
 
 .login-card h1 {
@@ -573,7 +581,7 @@ td.negative { color: var(--burnt-orange); }
   padding: 3px 9px;
   margin: 2px 4px 2px 0;
   border-radius: var(--radius);
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -639,24 +647,18 @@ td.negative { color: var(--burnt-orange); }
 
 .report-brand { flex: none; }
 
-.report-logo {
-  font-family: var(--font-heading);
-  font-weight: 200;
-  font-size: 30px;
-  line-height: 1;
-  letter-spacing: 0.17em;
-  text-transform: uppercase;
-  color: var(--burnt-orange);
-  white-space: nowrap;
-}
+/* a real image rather than a CSS mask: images print reliably, masks can be
+   dropped by the print renderer */
+.report-logo-img { display: block; width: 190px; height: auto; }
+
 .report-logo-sub {
   font-family: var(--font-body);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 500;
-  letter-spacing: 0.44em;
+  letter-spacing: 0.36em;
   text-transform: uppercase;
   color: var(--copper-bark);
-  margin-top: 7px;
+  margin-top: 9px;
 }
 
 .report-meta { text-align: right; }
@@ -674,8 +676,8 @@ td.negative { color: var(--burnt-orange); }
 .report-h2 {
   font-family: var(--font-body);
   text-transform: uppercase;
-  letter-spacing: 0.18em;
-  font-size: 10px;
+  letter-spacing: 0.14em;
+  font-size: 11px;
   font-weight: 500;
   color: var(--copper-bark);
   padding-bottom: 10px;
@@ -703,8 +705,8 @@ td.negative { color: var(--burnt-orange); }
 .stat-label {
   font-family: var(--font-body);
   text-transform: uppercase;
-  letter-spacing: 0.16em;
-  font-size: 9px;
+  letter-spacing: 0.13em;
+  font-size: 10.5px;
   font-weight: 500;
   color: var(--text-muted);
   margin-bottom: 9px;
@@ -719,7 +721,7 @@ td.negative { color: var(--burnt-orange); }
 .stat-sub { font-size: 11px; color: var(--text-muted); margin-top: 5px; }
 
 .report-table { font-size: 12.5px; }
-.report-table th { font-size: 9px; padding-bottom: 8px; }
+.report-table th { font-size: 10px; padding-bottom: 8px; }
 .report-table td { padding: 9px 8px; }
 
 .report-foot {
