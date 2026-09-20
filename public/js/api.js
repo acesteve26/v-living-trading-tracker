@@ -1,3 +1,7 @@
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 async function api(path, options = {}) {
   const res = await fetch(path, {
     headers: { 'Content-Type': 'application/json' },
@@ -64,8 +68,8 @@ function renderTopbar(activePage, user) {
         .join('')}
     </nav>
     <div class="user-area">
-      <span class="who">${user.name}</span>
-      <span>${user.role}</span>
+      <span class="who">${escapeHtml(user.name)}</span>
+      <span>${escapeHtml(user.role)}</span>
       <button id="btnAccount">Account</button>
       <button id="btnLogout">Log out</button>
     </div>

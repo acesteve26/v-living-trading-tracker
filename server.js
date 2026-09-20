@@ -37,6 +37,36 @@ app.use(
 // instead of an unhandled rejection that takes the process down.
 const route = (handler) => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 
+// ---------- business dates ----------
+// "Today" always means today in the business's timezone, never the server's.
+// SQL uses BUSINESS_TODAY for the same reason: Postgres CURRENT_DATE on a UTC
+// server is the wrong day for four hours of every Dubai day.
+const BUSINESS_TODAY = `((NOW() AT TIME ZONE '${config.businessTimezone}')::date)`;
+
+function businessToday() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: config.businessTimezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(new Date());
+}
+
+// Parts of today's business date, for building period ranges without drifting
+// into the server's timezone.
+function businessNowParts() {
+  const [year, month, day] = businessToday().split('-').map(Number);
+  return { year, month: month - 1, day };
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function isValidDate(value) {
+  if (!ISO_DATE.test(value)) return false;
+  const d = new Date(`${value}T00:00:00Z`);
+  return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
+
 // ---------- auth helpers ----------
 function requireAuth(req, res, next) {
   if (!req.session.user) return res.status(401).json({ error: 'Not logged in' });
@@ -318,12 +348,13 @@ app.patch(
 );
 
 // ---------- deals ----------
-function loadDeal(id) {
+function loadDeal(id, exec) {
   return db.one(
     `SELECT d.*, u.name AS owner_name
      FROM deals d LEFT JOIN users u ON u.id = d.owner_id
      WHERE d.id = $1`,
-    [id]
+    [id],
+    exec
   );
 }
 
@@ -357,14 +388,17 @@ app.get(
     }
     // saved views for the things a salesperson actually looks for. All three are
     // about live work, so each is limited to open stages.
-    if (view === 'overdue' || view === 'closing_soon' || view === 'no_next_action') {
+    const VIEWS = ['overdue', 'closing_soon', 'no_next_action', 'no_close_date'];
+    if (VIEWS.includes(view)) {
       params.push(OPEN_STAGES);
       sql += ` AND d.stage = ANY($${params.length})`;
 
       if (view === 'overdue') {
-        sql += ' AND d.next_action_date IS NOT NULL AND d.next_action_date < CURRENT_DATE';
+        sql += ` AND d.next_action_date IS NOT NULL AND d.next_action_date < ${BUSINESS_TODAY}`;
       } else if (view === 'closing_soon') {
-        sql += ' AND d.expected_close_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 30';
+        sql += ` AND d.expected_close_date BETWEEN ${BUSINESS_TODAY} AND ${BUSINESS_TODAY} + 30`;
+      } else if (view === 'no_close_date') {
+        sql += ' AND d.expected_close_date IS NULL';
       } else {
         sql += ' AND d.next_action_date IS NULL';
       }
@@ -406,7 +440,7 @@ const TRACKED_FIELDS = {
 
 const asComparable = (v) => (v === null || v === undefined || v === '' ? null : String(v));
 
-async function recordHistory(entries) {
+async function recordHistory(entries, exec) {
   if (!entries.length) return;
   // one multi-row insert rather than a query per field
   const values = [];
@@ -419,7 +453,8 @@ async function recordHistory(entries) {
   await db.query(
     `INSERT INTO deal_history (deal_id, deal_name, changed_by, changed_by_name, action, field, old_value, new_value)
      VALUES ${values.join(',')}`,
-    params
+    params,
+    exec
   );
 }
 
@@ -440,16 +475,58 @@ function parseCost(raw) {
   return isNaN(n) ? null : n;
 }
 
-function validateDealBody(body) {
+const MAX_MONEY = 1e12; // NUMERIC(14,2) tops out here; beyond it Postgres errors
+const DATE_FIELDS = ['expected_close_date', 'won_lost_date', 'next_action_date'];
+
+// Everything a bad request could send is checked here, so malformed input comes
+// back as a clear 400 rather than reaching Postgres and surfacing as a 500.
+async function validateDealBody(body) {
   const errors = [];
+
   if (!body.customer_name || !body.customer_name.trim()) errors.push('Customer name is required');
-  if (body.value === undefined || isNaN(Number(body.value)) || Number(body.value) < 0) errors.push('Value must be a positive number');
+  else if (body.customer_name.trim().length > 200) errors.push('Customer name is too long');
+
+  const value = Number(body.value);
+  if (body.value === undefined || body.value === '' || isNaN(value) || value < 0) {
+    errors.push('Value must be a positive number');
+  } else if (value > MAX_MONEY) {
+    errors.push('Value is unrealistically large');
+  }
+
   if (body.cost !== undefined && body.cost !== null && body.cost !== '') {
     const c = Number(body.cost);
     if (isNaN(c) || c < 0) errors.push('Cost must be a positive number');
+    else if (c > MAX_MONEY) errors.push('Cost is unrealistically large');
   }
+
   if (!['Tiles', 'Sanitaryware', 'Both', 'Other'].includes(body.product_category)) errors.push('Invalid product category');
   if (!['Lead', 'Qualified', 'Proposal Sent', 'Negotiation', 'Won', 'Lost'].includes(body.stage)) errors.push('Invalid stage');
+
+  if (body.probability !== undefined && body.probability !== null && body.probability !== '') {
+    const p = Number(body.probability);
+    if (!Number.isInteger(p) || p < 0 || p > 100) errors.push('Probability must be a whole number between 0 and 100');
+  }
+
+  for (const field of DATE_FIELDS) {
+    const v = body[field];
+    if (v !== undefined && v !== null && v !== '' && !isValidDate(v)) {
+      errors.push(`${field.replace(/_/g, ' ')} must be a valid date`);
+    }
+  }
+
+  // An owner who has been deleted or deactivated would otherwise fail on the
+  // foreign key and surface as a 500.
+  if (body.owner_id !== undefined && body.owner_id !== null && body.owner_id !== '') {
+    const ownerId = Number(body.owner_id);
+    if (!Number.isInteger(ownerId) || ownerId < 1) {
+      errors.push('Invalid owner');
+    } else {
+      const owner = await db.one('SELECT id, active FROM users WHERE id = $1', [ownerId]);
+      if (!owner) errors.push('That owner no longer exists');
+      else if (!owner.active) errors.push('That owner is deactivated');
+    }
+  }
+
   return errors;
 }
 
@@ -458,58 +535,66 @@ app.post(
   requireDealEditor,
   route(async (req, res) => {
     const b = req.body || {};
-    const errors = validateDealBody(b);
+    const errors = await validateDealBody(b);
     if (errors.length) return res.status(400).json({ error: errors.join(', ') });
 
     const wonLostDate = ['Won', 'Lost'].includes(b.stage)
-      ? b.won_lost_date || new Date().toISOString().slice(0, 10)
+      ? b.won_lost_date || businessToday()
       : null;
     const probability =
       b.probability !== undefined && b.probability !== '' ? Number(b.probability) : db.defaultProbabilities[b.stage];
 
-    const row = await db.one(
-      `INSERT INTO deals
-        (customer_name, contact_name, contact_email, contact_phone, product_category,
-         description, value, cost, stage, probability, expected_close_date,
-         won_lost_date, owner_id, notes, next_action, next_action_date, lost_reason)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
-       RETURNING id`,
-      [
-        b.customer_name.trim(),
-        b.contact_name || null,
-        b.contact_email || null,
-        b.contact_phone || null,
-        b.product_category,
-        b.description || null,
-        Number(b.value),
-        parseCost(b.cost),
-        b.stage,
-        probability,
-        b.expected_close_date || null,
-        wonLostDate,
-        b.owner_id || req.session.user.id,
-        b.notes || null,
-        b.next_action || null,
-        b.next_action_date || null,
-        // only meaningful on a lost deal; cleared otherwise so a reopened deal
-        // doesn't keep a stale explanation
-        b.stage === 'Lost' ? b.lost_reason || null : null
-      ]
-    );
+    // The deal and its history entry land together or not at all.
+    const created = await db.transaction(async (client) => {
+      const row = await db.one(
+        `INSERT INTO deals
+          (customer_name, contact_name, contact_email, contact_phone, product_category,
+           description, value, cost, stage, probability, expected_close_date,
+           won_lost_date, owner_id, notes, next_action, next_action_date, lost_reason)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+         RETURNING id`,
+        [
+          b.customer_name.trim(),
+          b.contact_name || null,
+          b.contact_email || null,
+          b.contact_phone || null,
+          b.product_category,
+          b.description || null,
+          Number(b.value),
+          parseCost(b.cost),
+          b.stage,
+          probability,
+          b.expected_close_date || null,
+          wonLostDate,
+          b.owner_id || req.session.user.id,
+          b.notes || null,
+          b.next_action || null,
+          b.next_action_date || null,
+          // only meaningful on a lost deal; cleared otherwise so a reopened deal
+          // doesn't keep a stale explanation
+          b.stage === 'Lost' ? b.lost_reason || null : null
+        ],
+        client
+      );
 
-    const created = await loadDeal(row.id);
-    await recordHistory([
-      {
-        deal_id: row.id,
-        deal_name: created.customer_name,
-        changed_by: req.session.user.id,
-        changed_by_name: req.session.user.name,
-        action: 'created',
-        field: null,
-        old_value: null,
-        new_value: created.customer_name
-      }
-    ]);
+      const deal = await loadDeal(row.id, client);
+      await recordHistory(
+        [
+          {
+            deal_id: row.id,
+            deal_name: deal.customer_name,
+            changed_by: req.session.user.id,
+            changed_by_name: req.session.user.name,
+            action: 'created',
+            field: null,
+            old_value: null,
+            new_value: deal.customer_name
+          }
+        ],
+        client
+      );
+      return deal;
+    });
 
     res.json({ deal: created });
   })
@@ -523,56 +608,61 @@ app.put(
     if (!existing) return res.status(404).json({ error: 'Deal not found' });
 
     const b = req.body || {};
-    const errors = validateDealBody(b);
+    const errors = await validateDealBody(b);
     if (errors.length) return res.status(400).json({ error: errors.join(', ') });
 
     const wonLostDate = ['Won', 'Lost'].includes(b.stage)
-      ? b.won_lost_date || existing.won_lost_date || new Date().toISOString().slice(0, 10)
+      ? b.won_lost_date || existing.won_lost_date || businessToday()
       : null;
     const probability =
       b.probability !== undefined && b.probability !== '' ? Number(b.probability) : db.defaultProbabilities[b.stage];
 
-    await db.query(
-      `UPDATE deals SET
-         customer_name = $1, contact_name = $2, contact_email = $3, contact_phone = $4,
-         product_category = $5, description = $6, value = $7, cost = $8, stage = $9,
-         probability = $10, expected_close_date = $11, won_lost_date = $12,
-         owner_id = $13, notes = $14, next_action = $15, next_action_date = $16,
-         lost_reason = $17, updated_at = NOW()
-       WHERE id = $18`,
-      [
-        b.customer_name.trim(),
-        b.contact_name || null,
-        b.contact_email || null,
-        b.contact_phone || null,
-        b.product_category,
-        b.description || null,
-        Number(b.value),
-        parseCost(b.cost),
-        b.stage,
-        probability,
-        b.expected_close_date || null,
-        wonLostDate,
-        b.owner_id || existing.owner_id,
-        b.notes || null,
-        b.next_action || null,
-        b.next_action_date || null,
-        b.stage === 'Lost' ? b.lost_reason || null : null,
-        req.params.id
-      ]
-    );
+    const updated = await db.transaction(async (client) => {
+      await db.query(
+        `UPDATE deals SET
+           customer_name = $1, contact_name = $2, contact_email = $3, contact_phone = $4,
+           product_category = $5, description = $6, value = $7, cost = $8, stage = $9,
+           probability = $10, expected_close_date = $11, won_lost_date = $12,
+           owner_id = $13, notes = $14, next_action = $15, next_action_date = $16,
+           lost_reason = $17, updated_at = NOW()
+         WHERE id = $18`,
+        [
+          b.customer_name.trim(),
+          b.contact_name || null,
+          b.contact_email || null,
+          b.contact_phone || null,
+          b.product_category,
+          b.description || null,
+          Number(b.value),
+          parseCost(b.cost),
+          b.stage,
+          probability,
+          b.expected_close_date || null,
+          wonLostDate,
+          b.owner_id || existing.owner_id,
+          b.notes || null,
+          b.next_action || null,
+          b.next_action_date || null,
+          b.stage === 'Lost' ? b.lost_reason || null : null,
+          req.params.id
+        ],
+        client
+      );
 
-    const updated = await loadDeal(req.params.id);
-    await recordHistory(
-      diffDeal(existing, updated).map((c) => ({
-        deal_id: Number(req.params.id),
-        deal_name: updated.customer_name,
-        changed_by: req.session.user.id,
-        changed_by_name: req.session.user.name,
-        action: 'updated',
-        ...c
-      }))
-    );
+      const deal = await loadDeal(req.params.id, client);
+      await recordHistory(
+        diffDeal(existing, deal).map((c) => ({
+          deal_id: Number(req.params.id),
+          deal_name: deal.customer_name,
+          changed_by: req.session.user.id,
+          changed_by_name: req.session.user.name,
+          action: 'updated',
+          ...c
+        })),
+        client
+      );
+      return deal;
+    });
 
     res.json({ deal: updated });
   })
@@ -585,30 +675,37 @@ app.delete(
     const existing = await loadDeal(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Deal not found' });
 
-    // recorded before the delete, so the row survives with deal_id nulled
-    await recordHistory([
-      {
-        deal_id: Number(req.params.id),
-        deal_name: existing.customer_name,
-        changed_by: req.session.user.id,
-        changed_by_name: req.session.user.name,
-        action: 'deleted',
-        field: null,
-        old_value: String(existing.value),
-        new_value: null
-      }
-    ]);
+    // Recorded before the delete so the row survives with deal_id nulled, and
+    // inside a transaction so history can't claim a deletion that then failed.
+    await db.transaction(async (client) => {
+      await recordHistory(
+        [
+          {
+            deal_id: Number(req.params.id),
+            deal_name: existing.customer_name,
+            changed_by: req.session.user.id,
+            changed_by_name: req.session.user.name,
+            action: 'deleted',
+            field: null,
+            old_value: String(existing.value),
+            new_value: null
+          }
+        ],
+        client
+      );
+      await db.query('DELETE FROM deals WHERE id = $1', [req.params.id], client);
+    });
 
-    await db.query('DELETE FROM deals WHERE id = $1', [req.params.id]);
     res.json({ ok: true });
   })
 );
 
 // ---------- dashboard ----------
 function computeRange(range, fromQ, toQ) {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
+  const parts = businessNowParts();
+  const now = new Date(parts.year, parts.month, parts.day);
+  const y = parts.year;
+  const m = parts.month;
   const pad = (n) => String(n).padStart(2, '0');
   const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
@@ -751,16 +848,20 @@ app.get(
     const STALE_DAYS = 14;
     const attention = await db.all(
       `SELECT d.*, u.name AS owner_name,
-              (d.next_action_date IS NOT NULL AND d.next_action_date < CURRENT_DATE) AS action_overdue,
-              (d.expected_close_date IS NOT NULL AND d.expected_close_date < CURRENT_DATE) AS close_date_passed,
-              (d.updated_at < NOW() - ($1 || ' days')::interval) AS gone_quiet
+              (d.next_action_date IS NOT NULL AND d.next_action_date < ${BUSINESS_TODAY}) AS action_overdue,
+              (d.expected_close_date IS NOT NULL AND d.expected_close_date < ${BUSINESS_TODAY}) AS close_date_passed,
+              (d.updated_at < NOW() - ($1 || ' days')::interval) AS gone_quiet,
+              (d.expected_close_date IS NULL) AS no_close_date
        FROM deals d
        LEFT JOIN users u ON u.id = d.owner_id
        WHERE d.stage = ANY($2)
          AND (
-           (d.next_action_date IS NOT NULL AND d.next_action_date < CURRENT_DATE)
-           OR (d.expected_close_date IS NOT NULL AND d.expected_close_date < CURRENT_DATE)
+           (d.next_action_date IS NOT NULL AND d.next_action_date < ${BUSINESS_TODAY})
+           OR (d.expected_close_date IS NOT NULL AND d.expected_close_date < ${BUSINESS_TODAY})
            OR d.updated_at < NOW() - ($1 || ' days')::interval
+           -- without a close date a deal sits outside every period figure, so
+           -- it would otherwise be invisible on this page entirely
+           OR d.expected_close_date IS NULL
          )
        ORDER BY COALESCE(d.next_action_date, d.expected_close_date, d.updated_at::date) ASC
        LIMIT 25`,
@@ -769,6 +870,7 @@ app.get(
 
     const needsAttention = attention.map((d) => {
       const reasons = [];
+      if (d.no_close_date) reasons.push({ code: 'nodate', label: 'No close date' });
       if (d.action_overdue) reasons.push({ code: 'action', label: 'Action overdue' });
       if (d.close_date_passed) reasons.push({ code: 'close', label: 'Close date passed' });
       if (d.gone_quiet) reasons.push({ code: 'quiet', label: `No update in ${STALE_DAYS} days` });
@@ -794,7 +896,10 @@ app.get(
         wonValue,
         lostValue,
         winRate,
-        openCount: openDeals.length + openDealsNoDate.length,
+        // Counts only the deals whose value is actually in the figures above.
+        // Including unscheduled deals here made the card read "6 open deals"
+        // over a total that covered five of them.
+        openCount: openDeals.length,
         wonCount: wonDeals.length,
         lostCount: lostDeals.length,
         openGp: grossProfit(openDeals),

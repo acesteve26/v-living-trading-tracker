@@ -116,7 +116,13 @@ async function loadDashboard() {
   document.getElementById('rangeLabel').textContent = `${data.range.label} · ${pretty(data.range.from)} — ${pretty(data.range.to)}`;
 
   document.getElementById('kpiOpenValue').textContent = money(data.kpis.totalOpenValue);
-  document.getElementById('kpiOpenCount').textContent = `${data.kpis.openCount} open deal${data.kpis.openCount === 1 ? '' : 's'}`;
+  // Deals without a close date sit outside every period figure, so they are
+  // named here rather than quietly excluded from the number above.
+  const unscheduled = data.unscheduledOpenCount || 0;
+  const openCountText = `${data.kpis.openCount} open deal${data.kpis.openCount === 1 ? '' : 's'} in this period`;
+  document.getElementById('kpiOpenCount').textContent = unscheduled
+    ? `${openCountText} · ${unscheduled} more with no close date (${money(data.unscheduledOpenValue)})`
+    : openCountText;
   document.getElementById('kpiWeighted').textContent = money(data.kpis.weightedOpenValue);
   document.getElementById('kpiWon').textContent = money(data.kpis.wonValue);
   document.getElementById('kpiWonCount').textContent = `${data.kpis.wonCount} won deal${data.kpis.wonCount === 1 ? '' : 's'}`;

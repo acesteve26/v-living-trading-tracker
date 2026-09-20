@@ -70,8 +70,16 @@ function resolveDatabaseSsl() {
   }
 }
 
+// Every date-only field - won/lost date, expected close, next action - is a
+// business date, not an instant. The server runs in UTC, so using the machine's
+// idea of "today" would record a deal won at 01:30 in Dubai as the previous
+// day, and push month-end wins into the wrong report. One explicit business
+// timezone is used everywhere instead, including inside SQL.
+const businessTimezone = process.env.BUSINESS_TIMEZONE || 'Asia/Dubai';
+
 module.exports = {
   isProduction,
+  businessTimezone,
   port: process.env.PORT || 3000,
   sessionSecret: resolveSessionSecret(),
   // Render terminates HTTPS in front of the app, so cookies can be marked

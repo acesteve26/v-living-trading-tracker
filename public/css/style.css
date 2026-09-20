@@ -591,6 +591,7 @@ td.negative { color: var(--burnt-orange); }
 .reason.action { background: var(--burnt-orange); color: var(--soft-canvas); }
 .reason.close { background: var(--copper-bark); color: var(--soft-canvas); }
 .reason.quiet { background: transparent; border-color: var(--mineral-sand); color: var(--copper-bark); }
+.reason.nodate { background: var(--mineral-sand); color: var(--deep-brown); }
 
 .overdue { color: var(--burnt-orange); font-weight: 500; }
 

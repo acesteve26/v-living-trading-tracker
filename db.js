@@ -32,10 +32,34 @@ pool.on('error', (err) => {
   console.error('Unexpected database error on an idle connection:', err.message);
 });
 
-// Convenience wrappers mirroring how the app used the SQLite driver.
-const query = (text, params) => pool.query(text, params);
-const one = async (text, params) => (await pool.query(text, params)).rows[0] || null;
-const all = async (text, params) => (await pool.query(text, params)).rows;
+// Convenience wrappers mirroring how the app used the SQLite driver. Each takes
+// an optional executor so the same call works inside a transaction.
+const query = (text, params, exec = pool) => exec.query(text, params);
+const one = async (text, params, exec = pool) => (await exec.query(text, params)).rows[0] || null;
+const all = async (text, params, exec = pool) => (await exec.query(text, params)).rows;
+
+// Runs everything in fn against one connection inside a transaction. Used where
+// a write and its audit record have to land together or not at all - otherwise
+// a deal can change with no history, or history can claim a deletion that then
+// failed.
+async function transaction(fn) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (e) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('Rollback failed:', rollbackError.message);
+    }
+    throw e;
+  } finally {
+    client.release();
+  }
+}
 
 const defaultProbabilities = {
   Lead: 10,
@@ -174,4 +198,4 @@ async function init() {
   await seed();
 }
 
-module.exports = { pool, query, one, all, init, defaultProbabilities };
+module.exports = { pool, query, one, all, transaction, init, defaultProbabilities };
