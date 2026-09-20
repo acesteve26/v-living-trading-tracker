@@ -47,9 +47,10 @@ function renderTopbar(activePage, user) {
   if (!el) return;
   const navItems = [
     { href: '/index.html', label: 'Dashboard', key: 'dashboard' },
-    { href: '/deals.html', label: 'Deals', key: 'deals' }
+    { href: '/deals.html', label: 'Deals', key: 'deals' },
+    { href: '/report.html', label: 'Report', key: 'report' }
   ];
-  if (user.role === 'admin') navItems.push({ href: '/users.html', label: 'Users', key: 'users' });
+  if (user.canManageUsers) navItems.push({ href: '/users.html', label: 'Users', key: 'users' });
 
   el.innerHTML = `
     <div class="brand">

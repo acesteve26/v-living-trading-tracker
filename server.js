@@ -43,9 +43,28 @@ function requireAuth(req, res, next) {
   next();
 }
 
+// Roles and what they can do. Everyone signed in can view deals and run
+// reports; these two capabilities are the only things that differ.
+const ROLES = ['admin', 'management', 'accounts', 'sales'];
+// Management and accounts are deliberately read-only: they oversee and report,
+// they don't work the pipeline.
+const CAN_EDIT_DEALS = new Set(['admin', 'sales']);
+const CAN_MANAGE_USERS = new Set(['admin']);
+
+function normaliseRole(role, fallback = 'sales') {
+  return ROLES.includes(role) ? role : fallback;
+}
+
 function requireAdmin(req, res, next) {
-  if (!req.session.user || req.session.user.role !== 'admin') {
+  if (!req.session.user || !CAN_MANAGE_USERS.has(req.session.user.role)) {
     return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+}
+
+function requireDealEditor(req, res, next) {
+  if (!req.session.user || !CAN_EDIT_DEALS.has(req.session.user.role)) {
+    return res.status(403).json({ error: 'Your role has read-only access to deals' });
   }
   next();
 }
@@ -57,7 +76,9 @@ function publicUser(u) {
     email: u.email,
     role: u.role,
     active: u.active,
-    mustChangePassword: u.must_change_password === true
+    mustChangePassword: u.must_change_password === true,
+    canEditDeals: CAN_EDIT_DEALS.has(u.role),
+    canManageUsers: CAN_MANAGE_USERS.has(u.role)
   };
 }
 
@@ -172,7 +193,7 @@ app.post(
       const row = await db.one(
         `INSERT INTO users (name, email, password_hash, role, must_change_password)
          VALUES ($1, $2, $3, $4, TRUE) RETURNING id`,
-        [name.trim(), email.toLowerCase().trim(), bcrypt.hashSync(password, 10), role === 'admin' ? 'admin' : 'sales']
+        [name.trim(), email.toLowerCase().trim(), bcrypt.hashSync(password, 10), normaliseRole(role)]
       );
       res.json({ id: row.id });
     } catch (e) {
@@ -191,7 +212,7 @@ app.patch(
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const isSelf = Number(req.params.id) === req.session.user.id;
-    const nextRole = role === undefined ? user.role : role === 'admin' ? 'admin' : 'sales';
+    const nextRole = role === undefined ? user.role : normaliseRole(role, user.role);
     const nextActive = active === undefined ? user.active : !(active === false || active === 0);
 
     // An admin editing themselves could otherwise remove their own access and
@@ -335,6 +356,52 @@ app.get(
   })
 );
 
+// ---------- deal history ----------
+// Only fields worth reading back in a report or an audit. Free text like notes
+// and description is deliberately left out - it would bury the signal.
+const TRACKED_FIELDS = {
+  customer_name: 'Customer',
+  product_category: 'Category',
+  value: 'Value',
+  cost: 'Cost',
+  stage: 'Stage',
+  probability: 'Probability',
+  expected_close_date: 'Expected close',
+  won_lost_date: 'Won/Lost date',
+  owner_id: 'Owner',
+  next_action: 'Next action',
+  next_action_date: 'Next action due'
+};
+
+const asComparable = (v) => (v === null || v === undefined || v === '' ? null : String(v));
+
+async function recordHistory(entries) {
+  if (!entries.length) return;
+  // one multi-row insert rather than a query per field
+  const values = [];
+  const params = [];
+  entries.forEach((e, i) => {
+    const o = i * 8;
+    values.push(`($${o + 1},$${o + 2},$${o + 3},$${o + 4},$${o + 5},$${o + 6},$${o + 7},$${o + 8})`);
+    params.push(e.deal_id, e.deal_name, e.changed_by, e.changed_by_name, e.action, e.field, e.old_value, e.new_value);
+  });
+  await db.query(
+    `INSERT INTO deal_history (deal_id, deal_name, changed_by, changed_by_name, action, field, old_value, new_value)
+     VALUES ${values.join(',')}`,
+    params
+  );
+}
+
+function diffDeal(before, after) {
+  const changes = [];
+  for (const field of Object.keys(TRACKED_FIELDS)) {
+    const from = asComparable(before[field]);
+    const to = asComparable(after[field]);
+    if (from !== to) changes.push({ field, old_value: from, new_value: to });
+  }
+  return changes;
+}
+
 // cost is optional; null means "not captured yet" so GP is reported as unknown rather than 100%
 function parseCost(raw) {
   if (raw === undefined || raw === null || raw === '') return null;
@@ -357,7 +424,7 @@ function validateDealBody(body) {
 
 app.post(
   '/api/deals',
-  requireAuth,
+  requireDealEditor,
   route(async (req, res) => {
     const b = req.body || {};
     const errors = validateDealBody(b);
@@ -396,13 +463,27 @@ app.post(
       ]
     );
 
-    res.json({ deal: await loadDeal(row.id) });
+    const created = await loadDeal(row.id);
+    await recordHistory([
+      {
+        deal_id: row.id,
+        deal_name: created.customer_name,
+        changed_by: req.session.user.id,
+        changed_by_name: req.session.user.name,
+        action: 'created',
+        field: null,
+        old_value: null,
+        new_value: created.customer_name
+      }
+    ]);
+
+    res.json({ deal: created });
   })
 );
 
 app.put(
   '/api/deals/:id',
-  requireAuth,
+  requireDealEditor,
   route(async (req, res) => {
     const existing = await loadDeal(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Deal not found' });
@@ -446,14 +527,43 @@ app.put(
       ]
     );
 
-    res.json({ deal: await loadDeal(req.params.id) });
+    const updated = await loadDeal(req.params.id);
+    await recordHistory(
+      diffDeal(existing, updated).map((c) => ({
+        deal_id: Number(req.params.id),
+        deal_name: updated.customer_name,
+        changed_by: req.session.user.id,
+        changed_by_name: req.session.user.name,
+        action: 'updated',
+        ...c
+      }))
+    );
+
+    res.json({ deal: updated });
   })
 );
 
 app.delete(
   '/api/deals/:id',
-  requireAuth,
+  requireDealEditor,
   route(async (req, res) => {
+    const existing = await loadDeal(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Deal not found' });
+
+    // recorded before the delete, so the row survives with deal_id nulled
+    await recordHistory([
+      {
+        deal_id: Number(req.params.id),
+        deal_name: existing.customer_name,
+        changed_by: req.session.user.id,
+        changed_by_name: req.session.user.name,
+        action: 'deleted',
+        field: null,
+        old_value: String(existing.value),
+        new_value: null
+      }
+    ]);
+
     await db.query('DELETE FROM deals WHERE id = $1', [req.params.id]);
     res.json({ ok: true });
   })
@@ -662,6 +772,147 @@ app.get(
       recentWon,
       unscheduledOpenCount: openDealsNoDate.length,
       unscheduledOpenValue: openDealsNoDate.reduce((s, d) => s + d.value, 0)
+    });
+  })
+);
+
+app.get(
+  '/api/deals/:id/history',
+  requireAuth,
+  route(async (req, res) => {
+    const history = await db.all(
+      `SELECT action, field, old_value, new_value, changed_by_name, changed_at
+       FROM deal_history WHERE deal_id = $1 ORDER BY changed_at DESC, id DESC LIMIT 100`,
+      [req.params.id]
+    );
+    res.json({ history, fieldLabels: TRACKED_FIELDS });
+  })
+);
+
+// ---------- management report ----------
+// Everything a period report needs in one request. Anyone signed in can run it.
+app.get(
+  '/api/report',
+  requireAuth,
+  route(async (req, res) => {
+    const { from, to } = req.query;
+    if (!from || !to) return res.status(400).json({ error: 'from and to dates are required' });
+
+    const dealFields = `d.id, d.customer_name, d.product_category, d.value, d.cost, d.stage,
+                        d.probability, d.expected_close_date, d.won_lost_date, d.created_at,
+                        d.next_action, d.next_action_date, u.name AS owner_name, d.owner_id`;
+
+    const [won, lost, created, openDeals] = await Promise.all([
+      db.all(
+        `SELECT ${dealFields} FROM deals d LEFT JOIN users u ON u.id = d.owner_id
+         WHERE d.stage = 'Won' AND d.won_lost_date BETWEEN $1 AND $2
+         ORDER BY d.value DESC`,
+        [from, to]
+      ),
+      db.all(
+        `SELECT ${dealFields} FROM deals d LEFT JOIN users u ON u.id = d.owner_id
+         WHERE d.stage = 'Lost' AND d.won_lost_date BETWEEN $1 AND $2
+         ORDER BY d.value DESC`,
+        [from, to]
+      ),
+      db.all(
+        `SELECT ${dealFields} FROM deals d LEFT JOIN users u ON u.id = d.owner_id
+         WHERE d.created_at::date BETWEEN $1 AND $2
+         ORDER BY d.value DESC`,
+        [from, to]
+      ),
+      // Open pipeline is a snapshot of where things stand now, not a period
+      // slice - "what is still live" doesn't depend on the dates chosen.
+      db.all(
+        `SELECT ${dealFields} FROM deals d LEFT JOIN users u ON u.id = d.owner_id
+         WHERE d.stage = ANY($1) ORDER BY d.value DESC`,
+        [OPEN_STAGES]
+      )
+    ]);
+
+    const sum = (rows, field) => rows.reduce((s, r) => s + (Number(r[field]) || 0), 0);
+    const gpOf = (rows) => {
+      const priced = rows.filter((r) => r.cost !== null && r.cost !== undefined);
+      const value = sum(priced, 'value');
+      const gp = priced.reduce((s, r) => s + (r.value - r.cost), 0);
+      return { gp, marginPct: value > 0 ? (gp / value) * 100 : null, pricedCount: priced.length, totalCount: rows.length };
+    };
+
+    // One row per person who owns anything relevant, so the report shows the
+    // whole team rather than only those who closed something.
+    const people = new Map();
+    const bucket = (name) => {
+      const key = name || 'Unassigned';
+      if (!people.has(key)) {
+        people.set(key, { name: key, wonCount: 0, wonValue: 0, wonGp: 0, lostCount: 0, lostValue: 0, newCount: 0, newValue: 0, openCount: 0, openValue: 0 });
+      }
+      return people.get(key);
+    };
+    won.forEach((d) => {
+      const p = bucket(d.owner_name);
+      p.wonCount += 1;
+      p.wonValue += d.value;
+      if (d.cost !== null && d.cost !== undefined) p.wonGp += d.value - d.cost;
+    });
+    lost.forEach((d) => {
+      const p = bucket(d.owner_name);
+      p.lostCount += 1;
+      p.lostValue += d.value;
+    });
+    created.forEach((d) => {
+      const p = bucket(d.owner_name);
+      p.newCount += 1;
+      p.newValue += d.value;
+    });
+    openDeals.forEach((d) => {
+      const p = bucket(d.owner_name);
+      p.openCount += 1;
+      p.openValue += d.value;
+    });
+
+    const bySalesperson = [...people.values()]
+      .map((p) => ({ ...p, winRate: p.wonCount + p.lostCount > 0 ? (p.wonCount / (p.wonCount + p.lostCount)) * 100 : null }))
+      .sort((a, b) => b.wonValue - a.wonValue || b.openValue - a.openValue);
+
+    const byStage = {};
+    OPEN_STAGES.forEach((s) => (byStage[s] = { count: 0, value: 0 }));
+    openDeals.forEach((d) => {
+      byStage[d.stage].count += 1;
+      byStage[d.stage].value += d.value;
+    });
+
+    const byCategory = {};
+    ['Tiles', 'Sanitaryware', 'Both', 'Other'].forEach((c) => (byCategory[c] = { count: 0, value: 0 }));
+    openDeals.forEach((d) => {
+      byCategory[d.product_category].count += 1;
+      byCategory[d.product_category].value += d.value;
+    });
+
+    res.json({
+      range: { from, to },
+      generatedAt: new Date().toISOString(),
+      generatedBy: req.session.user.name,
+      summary: {
+        wonCount: won.length,
+        wonValue: sum(won, 'value'),
+        wonGp: gpOf(won),
+        lostCount: lost.length,
+        lostValue: sum(lost, 'value'),
+        newCount: created.length,
+        newValue: sum(created, 'value'),
+        winRate: won.length + lost.length > 0 ? (won.length / (won.length + lost.length)) * 100 : null,
+        openCount: openDeals.length,
+        openValue: sum(openDeals, 'value'),
+        openGp: gpOf(openDeals),
+        weightedOpenValue: openDeals.reduce((s, d) => s + (d.value * d.probability) / 100, 0)
+      },
+      won,
+      lost,
+      created,
+      openDeals: openDeals.slice(0, 20),
+      bySalesperson,
+      byStage,
+      byCategory
     });
   })
 );

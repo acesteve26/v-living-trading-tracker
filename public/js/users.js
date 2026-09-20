@@ -80,7 +80,7 @@ async function loadSettings() {
 (async () => {
   currentUser = await requireSession();
   if (!currentUser) return;
-  if (currentUser.role !== 'admin') {
+  if (!currentUser.canManageUsers) {
     window.location.href = '/index.html';
     return;
   }

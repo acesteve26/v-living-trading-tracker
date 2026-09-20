@@ -174,6 +174,10 @@ function collectDealForm() {
   await loadUsersForOwnerSelect();
   await loadDeals();
 
+  // read-only roles can browse and report, but not change the pipeline
+  if (!currentUser.canEditDeals) {
+    document.getElementById('btnAddDeal').classList.add('hidden');
+  }
   document.getElementById('btnAddDeal').addEventListener('click', () => openDealModal(null));
   document.getElementById('btnCancelDeal').addEventListener('click', closeDealModal);
   document.getElementById('searchBox').addEventListener('input', debounce(loadDeals, 250));

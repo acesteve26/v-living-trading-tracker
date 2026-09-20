@@ -88,10 +88,39 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT
 );
 
+-- Every change to a deal, one row per field changed. History can only ever
+-- describe what happened after this table existed - it cannot be backfilled -
+-- which is why it is worth recording well before anything reads it.
+-- changed_by_name is denormalised so the trail survives deleting a user.
+-- deal_id is nulled rather than cascaded on delete, and the customer name is
+-- kept on the row, so deleting a deal leaves its trail readable instead of
+-- quietly erasing the evidence.
+CREATE TABLE IF NOT EXISTS deal_history (
+  id SERIAL PRIMARY KEY,
+  deal_id INTEGER REFERENCES deals(id) ON DELETE SET NULL,
+  deal_name TEXT,
+  changed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  changed_by_name TEXT,
+  action TEXT NOT NULL CHECK (action IN ('created','updated','deleted')),
+  field TEXT,
+  old_value TEXT,
+  new_value TEXT,
+  changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS deal_history_deal_idx ON deal_history (deal_id, changed_at DESC);
+CREATE INDEX IF NOT EXISTS deal_history_when_idx ON deal_history (changed_at DESC);
+
 -- Migrations for columns added after the first release. CREATE TABLE IF NOT
 -- EXISTS won't touch an existing table, so new columns go here. These are
 -- idempotent, so they run harmlessly on every boot.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Roles grew from admin/sales to four. The inline CHECK has to be replaced
+-- rather than altered; dropping first keeps this safe to run repeatedly.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check
+  CHECK (role IN ('admin','management','accounts','sales'));
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS next_action TEXT;
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS next_action_date DATE;
 

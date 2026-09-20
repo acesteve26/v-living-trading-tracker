@@ -608,3 +608,156 @@ td.negative { color: var(--burnt-orange); }
 }
 
 .hidden { display: none !important; }
+
+/* ============================ management report ============================ */
+.print-tip {
+  background: var(--surface-alt);
+  border-left: 2px solid var(--mineral-sand);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--copper-bark);
+  margin-bottom: 22px;
+}
+
+.report-sheet {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 46px 48px 36px;
+}
+
+.report-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 26px;
+  margin-bottom: 34px;
+  border-bottom: 2px solid var(--deep-brown);
+}
+
+.report-brand { flex: none; }
+
+.report-logo {
+  font-family: var(--font-heading);
+  font-weight: 200;
+  font-size: 30px;
+  line-height: 1;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  color: var(--burnt-orange);
+  white-space: nowrap;
+}
+.report-logo-sub {
+  font-family: var(--font-body);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.44em;
+  text-transform: uppercase;
+  color: var(--copper-bark);
+  margin-top: 7px;
+}
+
+.report-meta { text-align: right; }
+.report-period {
+  font-family: var(--font-heading);
+  font-size: 19px;
+  font-weight: 300;
+  margin-top: 8px;
+  color: var(--deep-brown);
+}
+.report-generated { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+
+.report-section { margin-bottom: 34px; }
+
+.report-h2 {
+  font-family: var(--font-body);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--copper-bark);
+  padding-bottom: 10px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.report-note { text-transform: none; letter-spacing: 0.02em; color: var(--text-muted); }
+
+/* Bordered tiles with a real gap, rather than 1px gaps over a background:
+   an odd number of stats would otherwise leave an empty grey cell. */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.stat {
+  background: var(--surface);
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-top: 2px solid var(--mineral-sand);
+  border-radius: var(--radius);
+}
+.stat.accent { border-top-color: var(--cinnabar); }
+.stat-label {
+  font-family: var(--font-body);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 9px;
+}
+.stat-value {
+  font-family: var(--font-heading);
+  font-size: 23px;
+  font-weight: 300;
+  line-height: 1.05;
+  color: var(--deep-brown);
+}
+.stat-sub { font-size: 11px; color: var(--text-muted); margin-top: 5px; }
+
+.report-table { font-size: 12.5px; }
+.report-table th { font-size: 9px; padding-bottom: 8px; }
+.report-table td { padding: 9px 8px; }
+
+.report-foot {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  margin-top: 30px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ---------------------------- print ---------------------------- */
+@page { size: A4 portrait; margin: 14mm; }
+
+@media print {
+  /* Chrome drops backgrounds by default, which would strip the brand entirely */
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+  .no-print, .topbar, .modal-backdrop { display: none !important; }
+
+  body { background: #fff; font-size: 11px; }
+  .page { padding: 0; max-width: none; }
+
+  .report-sheet { border: none; border-radius: 0; padding: 0; }
+
+  /* keep sections and table rows from being split across pages */
+  .report-section { break-inside: avoid; margin-bottom: 22px; }
+  .page-break { break-before: page; }
+  tr, .stat { break-inside: avoid; }
+  thead { display: table-header-group; }
+
+  .report-logo { font-size: 24px; }
+  .stat-value { font-size: 18px; }
+  .report-table { font-size: 10px; }
+  .report-table td { padding: 6px 6px; }
+  .table-scroll { overflow: visible !important; }
+  .table-scroll table { min-width: 0 !important; }
+}
