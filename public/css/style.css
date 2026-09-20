@@ -557,4 +557,25 @@ td.negative { color: var(--burnt-orange); }
   letter-spacing: 0.04em;
 }
 
+.field-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.muted-note { color: var(--text-muted); font-size: 12px; }
+
+/* shown when a temporary password is blocking the rest of the app */
+.forced-note {
+  margin: -10px 0 22px;
+  padding: 12px 14px;
+  background: var(--surface-alt);
+  border-left: 2px solid var(--burnt-orange);
+  border-radius: var(--radius);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--copper-bark);
+}
+
 .hidden { display: none !important; }

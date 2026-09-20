@@ -77,6 +77,70 @@ function renderTopbar(activePage, user) {
   document.getElementById('btnAccount').addEventListener('click', () => {
     document.getElementById('accountModal').classList.remove('hidden');
   });
+
+  wireAccountModal(Boolean(user.mustChangePassword));
+  if (user.mustChangePassword) forcePasswordChange();
+}
+
+// One implementation for every page, rather than the same handler copied into
+// each page script.
+function wireAccountModal(forced) {
+  const modal = document.getElementById('accountModal');
+  if (!modal) return;
+
+  const closeBtn = document.getElementById('closeAccount');
+  if (closeBtn) closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
+
+  const form = document.getElementById('pwForm');
+  if (!form) return;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById('pwErr');
+    errEl.textContent = '';
+    try {
+      await api('/api/change-password', {
+        method: 'POST',
+        body: JSON.stringify({
+          currentPassword: document.getElementById('curPw').value,
+          newPassword: document.getElementById('newPw').value
+        })
+      });
+      form.reset();
+      if (forced) {
+        // reload so the rest of the app unlocks with the flag cleared
+        window.location.reload();
+        return;
+      }
+      modal.classList.add('hidden');
+      alert('Password updated.');
+    } catch (err) {
+      errEl.textContent = err.message;
+    }
+  });
+}
+
+// A temporary password is outstanding: open the account panel, explain why, and
+// remove the way out. The server blocks the rest of the API regardless, so this
+// is about making the situation clear rather than being the actual gate.
+function forcePasswordChange() {
+  const modal = document.getElementById('accountModal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+
+  const heading = modal.querySelector('h2');
+  if (heading) heading.textContent = 'Choose your password';
+
+  if (!modal.querySelector('.forced-note')) {
+    const note = document.createElement('p');
+    note.className = 'forced-note';
+    note.textContent =
+      'You are signing in with a temporary password set by an administrator. Choose your own to continue.';
+    heading.insertAdjacentElement('afterend', note);
+  }
+
+  const closeBtn = document.getElementById('closeAccount');
+  if (closeBtn) closeBtn.classList.add('hidden');
 }
 
 async function loadCurrency() {

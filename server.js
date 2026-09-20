@@ -50,8 +50,27 @@ function requireAdmin(req, res, next) {
 }
 
 function publicUser(u) {
-  return { id: u.id, name: u.name, email: u.email, role: u.role, active: u.active };
+  return {
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    role: u.role,
+    active: u.active,
+    mustChangePassword: u.must_change_password === true
+  };
 }
+
+// While a temporary password is outstanding, the account can do nothing except
+// look at itself, change the password, or log out. Enforced here rather than
+// only in the UI, so it can't be sidestepped by calling the API directly.
+const PASSWORD_CHANGE_EXEMPT = new Set(['/api/session', '/api/change-password', '/api/logout', '/api/login']);
+
+app.use('/api', (req, res, next) => {
+  if (!req.session.user || !req.session.user.mustChangePassword) return next();
+  const pathWithoutQuery = req.originalUrl.split('?')[0];
+  if (PASSWORD_CHANGE_EXEMPT.has(pathWithoutQuery)) return next();
+  res.status(403).json({ error: 'Set a new password before continuing.', mustChangePassword: true });
+});
 
 // ---------- auth routes ----------
 app.post(
@@ -92,10 +111,12 @@ app.post(
     if (!bcrypt.compareSync(currentPassword || '', user.password_hash)) {
       return res.status(401).json({ error: 'Current password is incorrect' });
     }
-    await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [
-      bcrypt.hashSync(newPassword, 10),
-      user.id
-    ]);
+    await db.query(
+      'UPDATE users SET password_hash = $1, must_change_password = FALSE WHERE id = $2',
+      [bcrypt.hashSync(newPassword, 10), user.id]
+    );
+    // the session carries the flag, so clear it there too or the block persists
+    req.session.user.mustChangePassword = false;
     res.json({ ok: true });
   })
 );
@@ -106,7 +127,7 @@ app.get(
   requireAuth,
   route(async (req, res) => {
     const users = await db.all(
-      'SELECT id, name, email, role, active, created_at FROM users ORDER BY name'
+      'SELECT id, name, email, role, active, must_change_password, created_at FROM users ORDER BY name'
     );
     res.json({ users });
   })
@@ -120,8 +141,10 @@ app.post(
     if (!name || !email || !password) return res.status(400).json({ error: 'Name, email and password are required' });
     if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
     try {
+      // the admin sets a temporary password here, so the new user must replace it
       const row = await db.one(
-        'INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, $4) RETURNING id',
+        `INSERT INTO users (name, email, password_hash, role, must_change_password)
+         VALUES ($1, $2, $3, $4, TRUE) RETURNING id`,
         [name.trim(), email.toLowerCase().trim(), bcrypt.hashSync(password, 10), role === 'admin' ? 'admin' : 'sales']
       );
       res.json({ id: row.id });
@@ -136,15 +159,59 @@ app.patch(
   '/api/users/:id',
   requireAdmin,
   route(async (req, res) => {
-    const { role, active, name } = req.body || {};
+    const { role, active, name, email, newPassword } = req.body || {};
     const user = await db.one('SELECT * FROM users WHERE id = $1', [req.params.id]);
     if (!user) return res.status(404).json({ error: 'User not found' });
-    await db.query('UPDATE users SET role = $1, active = $2, name = $3 WHERE id = $4', [
-      role === 'admin' ? 'admin' : 'sales',
-      !(active === false || active === 0),
-      name || user.name,
-      req.params.id
-    ]);
+
+    const isSelf = Number(req.params.id) === req.session.user.id;
+    const nextRole = role === undefined ? user.role : role === 'admin' ? 'admin' : 'sales';
+    const nextActive = active === undefined ? user.active : !(active === false || active === 0);
+
+    // An admin editing themselves could otherwise remove their own access and
+    // leave nobody able to manage users.
+    if (isSelf && nextRole !== 'admin') {
+      return res.status(400).json({ error: "You can't remove your own admin role" });
+    }
+    if (isSelf && !nextActive) {
+      return res.status(400).json({ error: "You can't deactivate your own account" });
+    }
+
+    if (newPassword !== undefined && newPassword !== '' && newPassword.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    try {
+      await db.query(
+        `UPDATE users SET
+           name = $1,
+           email = $2,
+           role = $3,
+           active = $4,
+           password_hash = COALESCE($5, password_hash),
+           -- a password set by an admin is temporary, so require a change on
+           -- next login. Editing anything else leaves the flag alone.
+           must_change_password = CASE WHEN $5 IS NULL THEN must_change_password ELSE TRUE END
+         WHERE id = $6`,
+        [
+          (name || user.name).trim(),
+          (email || user.email).toLowerCase().trim(),
+          nextRole,
+          nextActive,
+          newPassword ? bcrypt.hashSync(newPassword, 10) : null,
+          req.params.id
+        ]
+      );
+    } catch (e) {
+      if (e.code === '23505') return res.status(409).json({ error: 'Another user already has that email' });
+      throw e;
+    }
+
+    // keep the live session in step if the admin edited their own record
+    if (isSelf) {
+      const updated = await db.one('SELECT * FROM users WHERE id = $1', [req.params.id]);
+      req.session.user = publicUser(updated);
+    }
+
     res.json({ ok: true });
   })
 );

@@ -87,6 +87,11 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT
 );
+
+-- Migrations for columns added after the first release. CREATE TABLE IF NOT
+-- EXISTS won't touch an existing table, so new columns go here. These are
+-- idempotent, so they run harmlessly on every boot.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
 `;
 
 async function seed() {
@@ -98,12 +103,11 @@ async function seed() {
     const password = process.env.ADMIN_PASSWORD || crypto.randomBytes(9).toString('base64url');
     const generated = !process.env.ADMIN_PASSWORD;
 
-    await query('INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, $4)', [
-      'V Living Admin',
-      email,
-      bcrypt.hashSync(password, 10),
-      'admin'
-    ]);
+    await query(
+      `INSERT INTO users (name, email, password_hash, role, must_change_password)
+       VALUES ($1, $2, $3, $4, $5)`,
+      ['V Living Admin', email, bcrypt.hashSync(password, 10), 'admin', generated]
+    );
 
     console.log('\n  ============================================================');
     console.log('   FIRST RUN - administrator account created');

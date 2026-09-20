@@ -193,22 +193,5 @@ function escapeHtml(s) {
   buildRangeOptions();
   document.getElementById('rangeSelect').addEventListener('change', loadDashboard);
   document.getElementById('applyCustom').addEventListener('click', loadDashboard);
-  document.getElementById('closeAccount').addEventListener('click', () => document.getElementById('accountModal').classList.add('hidden'));
-  document.getElementById('pwForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const errEl = document.getElementById('pwErr');
-    errEl.textContent = '';
-    try {
-      await api('/api/change-password', {
-        method: 'POST',
-        body: JSON.stringify({ currentPassword: document.getElementById('curPw').value, newPassword: document.getElementById('newPw').value })
-      });
-      document.getElementById('accountModal').classList.add('hidden');
-      document.getElementById('pwForm').reset();
-      alert('Password updated.');
-    } catch (err) {
-      errEl.textContent = err.message;
-    }
-  });
   await loadDashboard();
 })();

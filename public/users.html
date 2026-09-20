@@ -17,7 +17,7 @@
 
     <div class="card">
       <table>
-        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Password</th><th></th></tr></thead>
         <tbody id="usersBody"></tbody>
       </table>
     </div>
@@ -44,19 +44,28 @@
 
   <div class="modal-backdrop hidden" id="userModal">
     <div class="modal">
-      <h2>Add User</h2>
+      <h2 id="userModalTitle">Add User</h2>
       <form id="userForm">
+        <input type="hidden" id="u_id" />
         <div class="field"><label>Name *</label><input id="u_name" required /></div>
         <div class="field"><label>Email *</label><input type="email" id="u_email" required /></div>
-        <div class="field"><label>Temporary password *</label><input type="password" id="u_password" required minlength="6" /></div>
+        <div class="field">
+          <label id="u_passwordLabel">Temporary password *</label>
+          <input type="password" id="u_password" minlength="6" />
+          <p class="field-hint" id="u_passwordHint">They'll be asked to set their own password when they first sign in.</p>
+        </div>
         <div class="field">
           <label>Role</label>
           <select id="u_role"><option value="sales">Sales</option><option value="admin">Admin</option></select>
         </div>
+        <div class="field" id="u_activeWrap">
+          <label>Status</label>
+          <select id="u_active"><option value="1">Active</option><option value="0">Deactivated</option></select>
+        </div>
         <div class="error-text" id="userErr"></div>
         <div class="modal-actions">
           <button type="button" class="btn secondary" id="cancelUser">Cancel</button>
-          <button type="submit" class="btn">Create User</button>
+          <button type="submit" class="btn" id="userSubmit">Create User</button>
         </div>
       </form>
     </div>
