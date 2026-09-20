@@ -1,6 +1,7 @@
 const path = require('path');
 const express = require('express');
 const session = require('express-session');
+const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
 const config = require('./config');
 const db = require('./db');
@@ -72,9 +73,35 @@ app.use('/api', (req, res, next) => {
   res.status(403).json({ error: 'Set a new password before continuing.', mustChangePassword: true });
 });
 
+// ---------- rate limiting ----------
+// The app is on the public internet, so the login is reachable by anyone. Only
+// FAILED attempts count, so a busy day of normal use never trips it, while
+// password guessing stops after a handful of tries.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many failed sign-in attempts. Please wait 15 minutes and try again.' }
+});
+
+// A far looser ceiling on everything else, to blunt scripted abuse without
+// getting in the way of someone clicking around quickly.
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 600,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down and try again shortly.' }
+});
+
+app.use('/api', apiLimiter);
+
 // ---------- auth routes ----------
 app.post(
   '/api/login',
+  loginLimiter,
   route(async (req, res) => {
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
@@ -346,8 +373,8 @@ app.post(
       `INSERT INTO deals
         (customer_name, contact_name, contact_email, contact_phone, product_category,
          description, value, cost, stage, probability, expected_close_date,
-         won_lost_date, owner_id, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+         won_lost_date, owner_id, notes, next_action, next_action_date)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        RETURNING id`,
       [
         b.customer_name.trim(),
@@ -363,7 +390,9 @@ app.post(
         b.expected_close_date || null,
         wonLostDate,
         b.owner_id || req.session.user.id,
-        b.notes || null
+        b.notes || null,
+        b.next_action || null,
+        b.next_action_date || null
       ]
     );
 
@@ -393,8 +422,9 @@ app.put(
          customer_name = $1, contact_name = $2, contact_email = $3, contact_phone = $4,
          product_category = $5, description = $6, value = $7, cost = $8, stage = $9,
          probability = $10, expected_close_date = $11, won_lost_date = $12,
-         owner_id = $13, notes = $14, updated_at = NOW()
-       WHERE id = $15`,
+         owner_id = $13, notes = $14, next_action = $15, next_action_date = $16,
+         updated_at = NOW()
+       WHERE id = $17`,
       [
         b.customer_name.trim(),
         b.contact_name || null,
@@ -410,6 +440,8 @@ app.put(
         wonLostDate,
         b.owner_id || existing.owner_id,
         b.notes || null,
+        b.next_action || null,
+        b.next_action_date || null,
         req.params.id
       ]
     );
@@ -569,8 +601,48 @@ app.get(
         won_lost_date: d.won_lost_date
       }));
 
+    // Deliberately NOT filtered by the selected period: this answers "what needs
+    // doing now", which has nothing to do with which year you're looking at.
+    const STALE_DAYS = 14;
+    const attention = await db.all(
+      `SELECT d.*, u.name AS owner_name,
+              (d.next_action_date IS NOT NULL AND d.next_action_date < CURRENT_DATE) AS action_overdue,
+              (d.expected_close_date IS NOT NULL AND d.expected_close_date < CURRENT_DATE) AS close_date_passed,
+              (d.updated_at < NOW() - ($1 || ' days')::interval) AS gone_quiet
+       FROM deals d
+       LEFT JOIN users u ON u.id = d.owner_id
+       WHERE d.stage = ANY($2)
+         AND (
+           (d.next_action_date IS NOT NULL AND d.next_action_date < CURRENT_DATE)
+           OR (d.expected_close_date IS NOT NULL AND d.expected_close_date < CURRENT_DATE)
+           OR d.updated_at < NOW() - ($1 || ' days')::interval
+         )
+       ORDER BY COALESCE(d.next_action_date, d.expected_close_date, d.updated_at::date) ASC
+       LIMIT 25`,
+      [String(STALE_DAYS), OPEN_STAGES]
+    );
+
+    const needsAttention = attention.map((d) => {
+      const reasons = [];
+      if (d.action_overdue) reasons.push({ code: 'action', label: 'Action overdue' });
+      if (d.close_date_passed) reasons.push({ code: 'close', label: 'Close date passed' });
+      if (d.gone_quiet) reasons.push({ code: 'quiet', label: `No update in ${STALE_DAYS} days` });
+      return {
+        id: d.id,
+        customer_name: d.customer_name,
+        value: d.value,
+        stage: d.stage,
+        owner_name: d.owner_name,
+        next_action: d.next_action,
+        next_action_date: d.next_action_date,
+        expected_close_date: d.expected_close_date,
+        reasons
+      };
+    });
+
     res.json({
       range: { from, to, label },
+      needsAttention,
       kpis: {
         totalOpenValue,
         weightedOpenValue,

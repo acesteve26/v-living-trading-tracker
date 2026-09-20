@@ -37,7 +37,7 @@
           <tr>
             <th>Customer</th><th>Category</th><th class="num">Value</th><th class="num">Cost</th>
             <th class="num">Margin %</th><th class="num" id="gpHeader">GP</th><th>Stage</th><th class="num">Prob.</th>
-            <th>Expected Close</th><th>Owner</th><th></th>
+            <th>Expected Close</th><th>Next Action</th><th>Owner</th><th></th>
           </tr>
         </thead>
         <tbody id="dealsBody"></tbody>
@@ -104,6 +104,14 @@
           <div class="field">
             <label>Won/Lost date</label>
             <input type="date" id="f_won_lost_date" />
+          </div>
+          <div class="field">
+            <label>Next action</label>
+            <input id="f_next_action" placeholder="e.g. Send revised quote" />
+          </div>
+          <div class="field">
+            <label>Next action due</label>
+            <input type="date" id="f_next_action_date" />
           </div>
           <div class="field full">
             <label>Owner</label>

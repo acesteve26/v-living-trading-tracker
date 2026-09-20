@@ -4,10 +4,12 @@ function buildRangeOptions() {
   const now = new Date();
   const y = now.getFullYear();
   const select = document.getElementById('rangeSelect');
+  // Nothing predates 2026, so years before it are never offered.
+  const FIRST_DATA_YEAR = 2026;
   const options = [
     { value: 'this_month', label: `This Month (${now.toLocaleString('en-US', { month: 'long' })} ${y})` },
     { value: 'ytd', label: `Year to Date (${y})` },
-    { value: `year:${y - 1}`, label: `Full Year ${y - 1}` },
+    ...(y - 1 >= FIRST_DATA_YEAR ? [{ value: `year:${y - 1}`, label: `Full Year ${y - 1}` }] : []),
     { value: `year:${y}`, label: `Full Year ${y}` },
     { value: `year:${y + 1}`, label: `Full Year ${y + 1}` },
     { value: `year:${y + 2}`, label: `Full Year ${y + 2}` },
@@ -60,6 +62,37 @@ function renderGpKpi(valueId, subId, gp) {
   subEl.textContent = `${margin} · ${coverage} deal${gp.totalCount === 1 ? '' : 's'} costed`;
 }
 
+function renderNeedsAttention(items) {
+  const body = document.getElementById('attentionBody');
+  const card = document.getElementById('attentionCard');
+  if (!body) return;
+
+  card.classList.toggle('all-clear', items.length === 0);
+
+  if (items.length === 0) {
+    body.innerHTML =
+      '<tr><td colspan="6" class="empty-state">Nothing overdue or gone quiet — every open deal has been touched recently.</td></tr>';
+    return;
+  }
+
+  body.innerHTML = items
+    .map((d) => {
+      const why = d.reasons.map((r) => `<span class="reason ${r.code}">${r.label}</span>`).join(' ');
+      const action = d.next_action
+        ? `${escapeHtml(d.next_action)}${d.next_action_date ? `<div class="muted-note">due ${d.next_action_date}</div>` : ''}`
+        : '<span class="muted-note">No next action set</span>';
+      return `<tr>
+        <td>${escapeHtml(d.customer_name)}</td>
+        <td class="num">${money(d.value)}</td>
+        <td><span class="badge ${d.stage.replace(/\s+/g, '-')}">${d.stage}</span></td>
+        <td>${why}</td>
+        <td>${action}</td>
+        <td>${escapeHtml(d.owner_name || '—')}</td>
+      </tr>`;
+    })
+    .join('');
+}
+
 async function loadDashboard() {
   const select = document.getElementById('rangeSelect');
   const range = select.value;
@@ -88,6 +121,7 @@ async function loadDashboard() {
   document.getElementById('kpiWon').textContent = money(data.kpis.wonValue);
   document.getElementById('kpiWonCount').textContent = `${data.kpis.wonCount} won deal${data.kpis.wonCount === 1 ? '' : 's'}`;
 
+  renderNeedsAttention(data.needsAttention || []);
   renderGpKpi('kpiOpenGp', 'kpiOpenGpSub', data.kpis.openGp);
   renderGpKpi('kpiWonGp', 'kpiWonGpSub', data.kpis.wonGp);
   document.getElementById('kpiWinRate').textContent = data.kpis.winRate === null ? '—' : `${data.kpis.winRate.toFixed(0)}%`;

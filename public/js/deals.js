@@ -16,6 +16,19 @@ function grossProfit(value, cost) {
   return { gp, marginPct: v > 0 ? (gp / v) * 100 : null };
 }
 
+// An overdue next action is the single most useful thing to spot in the list,
+// so it is called out rather than shown as a plain date.
+function nextActionCell(d) {
+  if (!d.next_action && !d.next_action_date) return '<span class="muted-note">—</span>';
+  const today = new Date().toISOString().slice(0, 10);
+  const overdue = d.next_action_date && d.next_action_date < today;
+  const date = d.next_action_date
+    ? `<span class="${overdue ? 'overdue' : ''}">${d.next_action_date}${overdue ? ' (overdue)' : ''}</span>`
+    : '';
+  const what = d.next_action ? `<div class="muted-note">${escapeHtml(d.next_action)}</div>` : '';
+  return date + what;
+}
+
 function marginCellClass(marginPct) {
   return marginPct !== null && marginPct < 0 ? ' class="num negative"' : ' class="num"';
 }
@@ -57,12 +70,13 @@ async function loadDeals() {
           <td><span class="badge ${d.stage.replace(/\s+/g, '-')}">${d.stage}</span></td>
           <td class="num">${d.probability}%</td>
           <td>${d.expected_close_date || '—'}</td>
+          <td>${nextActionCell(d)}</td>
           <td>${escapeHtml(d.owner_name || '—')}</td>
           <td><button class="btn small secondary" type="button">Edit</button></td>
         </tr>`;
         })
         .join('')
-    : '<tr><td colspan="11" class="empty-state">No deals match your filters</td></tr>';
+    : '<tr><td colspan="12" class="empty-state">No deals match your filters</td></tr>';
 
   document.querySelectorAll('.deal-row').forEach((row) => {
     row.addEventListener('click', () => openDealModal(Number(row.dataset.id)));
@@ -114,6 +128,8 @@ async function openDealModal(id) {
     document.getElementById('f_owner_id').value = deal.owner_id || '';
     document.getElementById('f_description').value = deal.description || '';
     document.getElementById('f_notes').value = deal.notes || '';
+    document.getElementById('f_next_action').value = deal.next_action || '';
+    document.getElementById('f_next_action_date').value = deal.next_action_date || '';
     document.getElementById('btnDeleteDeal').classList.remove('hidden');
   }
   updateGpReadout();
@@ -139,7 +155,9 @@ function collectDealForm() {
     won_lost_date: document.getElementById('f_won_lost_date').value || null,
     owner_id: document.getElementById('f_owner_id').value || null,
     description: document.getElementById('f_description').value,
-    notes: document.getElementById('f_notes').value
+    notes: document.getElementById('f_notes').value,
+    next_action: document.getElementById('f_next_action').value,
+    next_action_date: document.getElementById('f_next_action_date').value || null
   };
 }
 

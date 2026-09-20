@@ -92,6 +92,10 @@ CREATE TABLE IF NOT EXISTS settings (
 -- EXISTS won't touch an existing table, so new columns go here. These are
 -- idempotent, so they run harmlessly on every boot.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS next_action TEXT;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS next_action_date DATE;
+
+CREATE INDEX IF NOT EXISTS deals_next_action_idx ON deals (next_action_date);
 `;
 
 async function seed() {
