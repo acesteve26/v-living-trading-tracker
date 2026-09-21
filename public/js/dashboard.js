@@ -185,6 +185,19 @@ async function loadDashboard() {
     }
   });
 
+  // Enough distinct slices for every category. The last two are opacity tints
+  // of palette colours rather than new hues, which the brand guidelines allow.
+  const categoryColours = [
+    colors.burntOrange,
+    colors.copperBark,
+    colors.mineralSand,
+    colors.deepBrown,
+    colors.cinnabar,
+    colors.beige,
+    'rgba(115, 68, 35, 0.55)',
+    'rgba(150, 63, 22, 0.35)'
+  ];
+
   const catLabels = Object.keys(data.byCategory).filter((c) => data.byCategory[c].value > 0);
   charts.category = new Chart(document.getElementById('chartCategory'), {
     type: 'doughnut',
@@ -193,7 +206,7 @@ async function loadDashboard() {
       datasets: [{
         data: catLabels.length ? catLabels.map((c) => data.byCategory[c].value) : [1],
         backgroundColor: catLabels.length
-          ? [colors.burntOrange, colors.copperBark, colors.mineralSand, colors.deepBrown]
+          ? catLabels.map((_, i) => categoryColours[i % categoryColours.length])
           : [colors.beige],
         borderColor: '#fff',
         borderWidth: 2

@@ -161,6 +161,8 @@ async function loadCurrency() {
     const settings = data.settings;
     window.__APP_CURRENCY__ = settings.currency || 'AED';
     window.__APP_TZ__ = data.businessTimezone || 'Asia/Dubai';
+    window.__APP_CATEGORIES__ = data.productCategories || [];
+    window.__APP_STAGES__ = data.stages || [];
     return settings;
   } catch (e) {
     window.__APP_CURRENCY__ = 'AED';

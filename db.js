@@ -2,6 +2,14 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const pg = require('pg');
 const config = require('./config');
+const {
+  PRODUCT_CATEGORIES,
+  STAGES,
+  ROLES,
+  HISTORY_ACTIONS,
+  DEFAULT_PROBABILITIES,
+  sqlList
+} = require('./constants');
 
 // --- type handling -------------------------------------------------------
 // node-postgres returns some types in shapes that would quietly break the app,
@@ -72,14 +80,7 @@ async function transaction(fn) {
   }
 }
 
-const defaultProbabilities = {
-  Lead: 10,
-  Qualified: 30,
-  'Proposal Sent': 50,
-  Negotiation: 70,
-  Won: 100,
-  Lost: 0
-};
+const defaultProbabilities = DEFAULT_PROBABILITIES;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
@@ -87,7 +88,7 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'sales' CHECK (role IN ('admin','sales')),
+  role TEXT NOT NULL DEFAULT 'sales' CHECK (role IN (${sqlList(ROLES)})),
   active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -99,12 +100,12 @@ CREATE TABLE IF NOT EXISTS deals (
   contact_email TEXT,
   contact_phone TEXT,
   product_category TEXT NOT NULL DEFAULT 'Tiles'
-    CHECK (product_category IN ('Tiles','Sanitaryware','Both','Other')),
+    CHECK (product_category IN (${sqlList(PRODUCT_CATEGORIES)})),
   description TEXT,
   value NUMERIC(14,2) NOT NULL DEFAULT 0,
   cost NUMERIC(14,2),
   stage TEXT NOT NULL DEFAULT 'Lead'
-    CHECK (stage IN ('Lead','Qualified','Proposal Sent','Negotiation','Won','Lost')),
+    CHECK (stage IN (${sqlList(STAGES)})),
   probability INTEGER NOT NULL DEFAULT 20,
   expected_close_date DATE,
   won_lost_date DATE,
@@ -136,7 +137,7 @@ CREATE TABLE IF NOT EXISTS deal_history (
   deal_name TEXT,
   changed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
   changed_by_name TEXT,
-  action TEXT NOT NULL CHECK (action IN ('created','updated','deleted')),
+  action TEXT NOT NULL CHECK (action IN (${sqlList(HISTORY_ACTIONS)})),
   field TEXT,
   old_value TEXT,
   new_value TEXT,
@@ -155,7 +156,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL
 -- rather than altered; dropping first keeps this safe to run repeatedly.
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users ADD CONSTRAINT users_role_check
-  CHECK (role IN ('admin','management','accounts','sales'));
+  CHECK (role IN (${sqlList(ROLES)}));
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS next_action TEXT;
 ALTER TABLE deals ADD COLUMN IF NOT EXISTS next_action_date DATE;
 -- Free text rather than a constrained list: the suggestions in the UI cover the
@@ -170,10 +171,21 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS archived_by INTEGER REFERENCES users(
 
 CREATE INDEX IF NOT EXISTS deals_archived_idx ON deals (archived_at);
 
+-- Category and stage lists grow over time, so their constraints are rebuilt
+-- from the shared list on every boot rather than staying pinned to whatever
+-- they were when the table was first created.
+ALTER TABLE deals DROP CONSTRAINT IF EXISTS deals_product_category_check;
+ALTER TABLE deals ADD CONSTRAINT deals_product_category_check
+  CHECK (product_category IN (${sqlList(PRODUCT_CATEGORIES)}));
+
+ALTER TABLE deals DROP CONSTRAINT IF EXISTS deals_stage_check;
+ALTER TABLE deals ADD CONSTRAINT deals_stage_check
+  CHECK (stage IN (${sqlList(STAGES)}));
+
 -- history gained two more actions alongside archiving
 ALTER TABLE deal_history DROP CONSTRAINT IF EXISTS deal_history_action_check;
 ALTER TABLE deal_history ADD CONSTRAINT deal_history_action_check
-  CHECK (action IN ('created','updated','deleted','archived','restored'));
+  CHECK (action IN (${sqlList(HISTORY_ACTIONS)}));
 
 CREATE INDEX IF NOT EXISTS deals_next_action_idx ON deals (next_action_date);
 `;

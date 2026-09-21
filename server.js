@@ -6,10 +6,18 @@ const helmet = require('helmet');
 const bcrypt = require('bcryptjs');
 const config = require('./config');
 const db = require('./db');
+const {
+  PRODUCT_CATEGORIES,
+  STAGES,
+  OPEN_STAGES,
+  ROLES,
+  CAN_EDIT_DEALS: EDIT_DEAL_ROLES,
+  CAN_MANAGE_USERS: MANAGE_USER_ROLES
+} = require('./constants');
 
 const app = express();
 const PORT = config.port;
-const OPEN_STAGES = ['Lead', 'Qualified', 'Proposal Sent', 'Negotiation'];
+
 
 // behind Render's HTTPS proxy, trust the forwarded protocol so secure cookies work
 if (config.isProduction) app.set('trust proxy', 1);
@@ -137,11 +145,8 @@ function requireAuth(req, res, next) {
 
 // Roles and what they can do. Everyone signed in can view deals and run
 // reports; these two capabilities are the only things that differ.
-const ROLES = ['admin', 'management', 'accounts', 'sales'];
-// Management and accounts are deliberately read-only: they oversee and report,
-// they don't work the pipeline.
-const CAN_EDIT_DEALS = new Set(['admin', 'sales']);
-const CAN_MANAGE_USERS = new Set(['admin']);
+const CAN_EDIT_DEALS = new Set(EDIT_DEAL_ROLES);
+const CAN_MANAGE_USERS = new Set(MANAGE_USER_ROLES);
 
 function normaliseRole(role, fallback = 'sales') {
   return ROLES.includes(role) ? role : fallback;
@@ -440,7 +445,13 @@ app.get(
     const rows = await db.all('SELECT key, value FROM settings');
     const settings = {};
     rows.forEach((r) => (settings[r.key] = r.value));
-    res.json({ settings, stageProbabilities: db.defaultProbabilities, businessTimezone: config.businessTimezone });
+    res.json({
+      settings,
+      stageProbabilities: db.defaultProbabilities,
+      businessTimezone: config.businessTimezone,
+      productCategories: PRODUCT_CATEGORIES,
+      stages: STAGES
+    });
   })
 );
 
@@ -612,8 +623,8 @@ async function validateDealBody(body) {
     else if (c > MAX_MONEY) errors.push('Cost is unrealistically large');
   }
 
-  if (!['Tiles', 'Sanitaryware', 'Both', 'Other'].includes(body.product_category)) errors.push('Invalid product category');
-  if (!['Lead', 'Qualified', 'Proposal Sent', 'Negotiation', 'Won', 'Lost'].includes(body.stage)) errors.push('Invalid stage');
+  if (!PRODUCT_CATEGORIES.includes(body.product_category)) errors.push('Invalid product category');
+  if (!STAGES.includes(body.stage)) errors.push('Invalid stage');
 
   if (body.probability !== undefined && body.probability !== null && body.probability !== '') {
     const p = Number(body.probability);
@@ -981,7 +992,7 @@ app.get(
     });
 
     const byCategory = {};
-    ['Tiles', 'Sanitaryware', 'Both', 'Other'].forEach((c) => (byCategory[c] = { count: 0, value: 0 }));
+    PRODUCT_CATEGORIES.forEach((c) => (byCategory[c] = { count: 0, value: 0 }));
     openDeals.forEach((d) => {
       byCategory[d.product_category].count += 1;
       byCategory[d.product_category].value += d.value;
@@ -1214,7 +1225,7 @@ app.get(
     });
 
     const byCategory = {};
-    ['Tiles', 'Sanitaryware', 'Both', 'Other'].forEach((c) => (byCategory[c] = { count: 0, value: 0 }));
+    PRODUCT_CATEGORIES.forEach((c) => (byCategory[c] = { count: 0, value: 0 }));
     openDeals.forEach((d) => {
       byCategory[d.product_category].count += 1;
       byCategory[d.product_category].value += d.value;

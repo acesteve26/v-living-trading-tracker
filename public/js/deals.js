@@ -273,6 +273,16 @@ function collectDealForm() {
   document.getElementById('valueLabel').textContent = `Deal value (${cur}) *`;
   document.getElementById('costLabel').textContent = `Cost (${cur})`;
   document.getElementById('gpHeader').textContent = `GP (${cur})`;
+
+  // Built from the server's list rather than hardcoded in the markup, so adding
+  // a category is a one-line change in constants.js.
+  const categories = window.__APP_CATEGORIES__ || [];
+  document.getElementById('f_product_category').innerHTML = categories
+    .map((c) => `<option>${escapeHtml(c)}</option>`)
+    .join('');
+  document.getElementById('filterCategory').innerHTML =
+    '<option value="">All categories</option>' +
+    categories.map((c) => `<option>${escapeHtml(c)}</option>`).join('');
   await loadUsersForOwnerSelect();
   await loadDeals();
 

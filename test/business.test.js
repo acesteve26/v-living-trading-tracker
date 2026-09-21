@@ -244,3 +244,50 @@ describe('deal history', () => {
     assert.equal((await db.one('SELECT COUNT(*)::int AS c FROM deal_history')).c, historyBefore);
   });
 });
+
+// ---------------------------------------------------------- categories
+
+describe('product categories', () => {
+  const { PRODUCT_CATEGORIES } = require('../constants');
+
+  test('every configured category is accepted by the database', async () => {
+    for (const category of PRODUCT_CATEGORIES) {
+      const res = await admin.post('/api/deals', h.baseDeal({
+        customer_name: `Category ${category}`,
+        product_category: category,
+        expected_close_date: '2027-03-01'
+      }));
+      assert.equal(res.status, 200, `${category} was rejected: ${JSON.stringify(res.body)}`);
+      assert.equal(res.body.deal.product_category, category);
+    }
+  });
+
+  test('the new categories are among them', () => {
+    for (const c of ['Wallpaper', 'Furniture', 'Marble']) {
+      assert.ok(PRODUCT_CATEGORIES.includes(c), `${c} should be a category`);
+    }
+  });
+
+  test('every category is reported on, not just the ones with deals', async () => {
+    const res = await admin.get('/api/dashboard?range=year:2027');
+    for (const category of PRODUCT_CATEGORIES) {
+      assert.ok(category in res.body.byCategory, `${category} missing from the dashboard breakdown`);
+    }
+
+    const report = await admin.get('/api/report?from=2027-01-01&to=2027-12-31');
+    for (const category of PRODUCT_CATEGORIES) {
+      assert.ok(category in report.body.byCategory, `${category} missing from the report breakdown`);
+    }
+  });
+
+  test('the browser is sent the same list the database enforces', async () => {
+    const res = await admin.get('/api/settings');
+    assert.deepEqual(res.body.productCategories, PRODUCT_CATEGORIES,
+      'dropdowns must not be able to drift from the schema');
+  });
+
+  test('an unknown category is still refused', async () => {
+    const res = await admin.post('/api/deals', h.baseDeal({ product_category: 'Carpet' }));
+    assert.equal(res.status, 400);
+  });
+});

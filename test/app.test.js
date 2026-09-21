@@ -163,7 +163,9 @@ describe('deal validation', () => {
     ['absurd value', { value: 1e15 }],
     ['negative cost', { cost: -5 }],
     ['unknown stage', { stage: 'Maybe' }],
-    ['unknown category', { product_category: 'Marble' }],
+    // deliberately something the business does not sell; 'Marble' used to sit
+    // here and became a real category, which this suite caught
+    ['unknown category', { product_category: 'Carpet' }],
     ['missing customer name', { customer_name: '' }],
     ['owner who does not exist', { owner_id: 999999 }]
   ];
