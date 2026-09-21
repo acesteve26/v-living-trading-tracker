@@ -1494,7 +1494,15 @@ app.get(
   })
 );
 
-app.use(express.static(path.join(__dirname, 'public')));
+// no-cache is not "don't cache": it is "check with me before using it". With
+// the ETag that check is a cheap 304 - and it means a reload after a deploy
+// always runs the new scripts, rather than whatever the browser had decided
+// was still fresh enough.
+app.use(
+  express.static(path.join(__dirname, 'public'), {
+    setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache')
+  })
+);
 
 // Any error thrown in a route lands here rather than crashing the process.
 app.use((err, req, res, next) => {

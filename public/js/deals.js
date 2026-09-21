@@ -361,53 +361,101 @@ function wireDocuments() {
   // someone is dragging a file in - aiming at it was the first version of this
   // and it silently swallowed anything dropped on the rest of the form.
   const modal = document.getElementById('dealModal');
-  const carriesFiles = (e) => Array.from((e.dataTransfer && e.dataTransfer.types) || []).includes('Files');
 
-  // Both dragenter and dragover must be cancelled, or the browser opens the
-  // file instead of letting the page have it.
-  // The default is always cancelled, even for someone who can't attach
-  // anything: without that the browser navigates to the dropped file and the
-  // half-filled form goes with it. Whether it is accepted is decided after.
+  // What is being dragged, read from whatever the browser is willing to say
+  // mid-drag (file contents are withheld until the drop, but the kinds are
+  // not). Files from the desktop show up as 'Files'; Firefox adds its own
+  // name; some sources only populate items. A link is what you get when an
+  // attachment is dragged straight out of webmail - it is a URL to the file,
+  // not the file, and it needs handling differently rather than ignoring.
+  const describeDrag = (e) => {
+    const dt = e.dataTransfer;
+    if (!dt) return { files: false, link: false };
+    const types = Array.from(dt.types || []);
+    const items = Array.from(dt.items || []);
+    return {
+      files:
+        types.includes('Files') ||
+        types.includes('application/x-moz-file') ||
+        items.some((i) => i.kind === 'file'),
+      link: types.includes('text/uri-list')
+    };
+  };
+
+  // Anything that is a file or a link to one is claimed by the window, even
+  // for someone who can't attach: left to the browser, a dropped file or link
+  // navigates the tab away and the half-filled form goes with it. Plain text
+  // is left alone so it can still be dragged into a field. Whether a drop is
+  // then accepted is decided at the drop.
+  const claimable = (e) => {
+    const d = describeDrag(e);
+    return d.files || d.link;
+  };
   const canAttachNow = () => !zone.classList.contains('hidden');
 
-  ['dragenter', 'dragover'].forEach((type) =>
-    modal.addEventListener(type, (e) => {
-      if (!carriesFiles(e)) return;
-      e.preventDefault();
-      if (!canAttachNow()) return;
-      modal.classList.add('drop-target');
-      zone.classList.add('dragover');
-    })
-  );
-
+  // dragenter/dragleave fire on every child boundary crossed, and Chrome gives
+  // no relatedTarget to tell a real exit from an internal one - a counter does.
+  let dragDepth = 0;
   const endDrag = () => {
+    dragDepth = 0;
     modal.classList.remove('drop-target');
     zone.classList.remove('dragover');
   };
 
+  modal.addEventListener('dragenter', (e) => {
+    if (!claimable(e)) return;
+    e.preventDefault();
+    dragDepth += 1;
+    if (canAttachNow()) {
+      modal.classList.add('drop-target');
+      zone.classList.add('dragover');
+    }
+  });
+
+  // Cancelled on every single event: the browser treats any uncancelled
+  // dragover as "not a drop target here", and that is the whole failure mode.
+  modal.addEventListener('dragover', (e) => {
+    if (!claimable(e)) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = canAttachNow() ? 'copy' : 'none';
+  });
+
   modal.addEventListener('dragleave', (e) => {
-    // leaving for a child element is not leaving
-    if (e.relatedTarget && modal.contains(e.relatedTarget)) return;
-    endDrag();
+    if (!claimable(e)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) endDrag();
   });
 
   modal.addEventListener('drop', async (e) => {
-    if (!carriesFiles(e)) return;
+    const d = describeDrag(e);
+    if (!d.files && !d.link) return;
     e.preventDefault();
     endDrag();
     if (!canAttachNow()) return;
-    if (e.dataTransfer.files.length) {
-      await addFiles(e.dataTransfer.files);
-      // the list is at the bottom of a long form, so show what just happened
+
+    const errEl = document.getElementById('docErr');
+    const files = (e.dataTransfer && e.dataTransfer.files) || [];
+
+    // Nothing arriving as a file is the case that used to vanish without a
+    // word. Say what came through, and what to do instead.
+    if (!files.length) {
+      errEl.textContent = d.link
+        ? 'That was dragged as a link to a file rather than the file itself - usually an attachment pulled straight out of an email in the browser. Save it to your computer first and drag it from there, or use "choose files".'
+        : 'Nothing arrived as a file. Save the document to your computer and drag it from there, or use "choose files".';
       document.getElementById('documentsSection').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      return;
     }
+
+    await addFiles(files);
+    // the list is at the bottom of a long form, so show what just happened
+    document.getElementById('documentsSection').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
 
   // A file dropped outside the deal window would otherwise navigate away from
   // the page and lose whatever is half-typed in the form.
   ['dragover', 'drop'].forEach((type) =>
     window.addEventListener(type, (e) => {
-      if (!modal.contains(e.target)) e.preventDefault();
+      if (claimable(e) && !modal.contains(e.target)) e.preventDefault();
     })
   );
 
