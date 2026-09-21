@@ -74,6 +74,41 @@ describe('attaching documents', () => {
     assert.match(down.headers.get('cache-control'), /no-store/);
   });
 
+  test('a PDF can be asked for inline, so it can be previewed in the app', async () => {
+    const up = await admin.upload(`/api/deals/${dealId}/documents`, 'previewable.pdf', pdf(), 'application/pdf');
+    const inline = await admin.download(`/api/documents/${up.body.document.id}?inline=1`);
+
+    assert.ok(inline.headers.get('content-disposition').startsWith('inline;'));
+    assert.equal(inline.headers.get('content-type'), 'application/pdf');
+    assert.equal(inline.headers.get('x-content-type-options'), 'nosniff');
+    // the app frames its own preview; the global policy forbids framing entirely
+    assert.match(inline.headers.get('content-security-policy'), /frame-ancestors 'self'/);
+
+    // and without asking, it is still a download
+    const plain = await admin.download(`/api/documents/${up.body.document.id}`);
+    assert.ok(plain.headers.get('content-disposition').startsWith('attachment;'));
+  });
+
+  test('a type with no viewer stays a download even when inline is asked for', async () => {
+    const up = await admin.upload(`/api/deals/${dealId}/documents`, 'archive.zip', pdf(), 'application/zip');
+    const res = await admin.download(`/api/documents/${up.body.document.id}?inline=1`);
+
+    assert.ok(
+      res.headers.get('content-disposition').startsWith('attachment;'),
+      'only PDFs and images may be shown in the browser'
+    );
+    // and it keeps the strict site-wide policy: the framing exception is
+    // granted only to the preview, never to a file being handed over to save
+    assert.match(res.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+  });
+
+  test('the browser is told which types it can preview', async () => {
+    const { body } = await admin.get('/api/settings');
+    assert.ok(body.documentPreviewTypes.includes('application/pdf'));
+    assert.ok(body.documentPreviewTypes.includes('image/jpeg'));
+    assert.ok(!body.documentPreviewTypes.includes('application/zip'));
+  });
+
   test('a filename carrying a path is stored as a bare name', async () => {
     const up = await admin.upload(`/api/deals/${dealId}/documents`, '../../etc/passwd.pdf', pdf(), 'application/pdf');
     assert.equal(up.status, 200);

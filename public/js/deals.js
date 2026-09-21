@@ -203,6 +203,32 @@ function documentsUsedBytes() {
   );
 }
 
+// PDFs and ordinary images can be shown here. Everything else - Word, Excel,
+// ZIP - has no viewer in the browser, so those stay downloads.
+function isPreviewable(doc) {
+  return (window.__APP_DOC_PREVIEW_TYPES__ || []).includes(doc.content_type);
+}
+
+function openPreview(doc) {
+  const modal = document.getElementById('previewModal');
+  const body = document.getElementById('previewBody');
+  document.getElementById('previewTitle').textContent = doc.filename;
+  document.getElementById('previewDownload').href = `/api/documents/${doc.id}`;
+
+  const src = `/api/documents/${doc.id}?inline=1`;
+  body.innerHTML = doc.content_type === 'application/pdf'
+    ? `<iframe class="preview-frame" src="${src}" title="${escapeHtml(doc.filename)}"></iframe>`
+    : `<img class="preview-image" src="${src}" alt="${escapeHtml(doc.filename)}" />`;
+
+  modal.classList.remove('hidden');
+}
+
+function closePreview() {
+  document.getElementById('previewModal').classList.add('hidden');
+  // drop the source so a big PDF isn't left rendering behind the deal form
+  document.getElementById('previewBody').innerHTML = '';
+}
+
 function renderDocuments() {
   const list = document.getElementById('docList');
   const usage = document.getElementById('docUsage');
@@ -211,7 +237,9 @@ function renderDocuments() {
   const rows = [
     ...savedDocuments.map(
       (d) => `<li class="doc-row">
-        <a class="doc-name" href="/api/documents/${d.id}" download>${escapeHtml(d.filename)}</a>
+        ${isPreviewable(d)
+          ? `<button type="button" class="doc-name as-button" data-preview-id="${d.id}">${escapeHtml(d.filename)}</button>`
+          : `<a class="doc-name" href="/api/documents/${d.id}" download>${escapeHtml(d.filename)}</a>`}
         <span class="doc-meta">${fileSize(d.byte_size)} · ${escapeHtml(d.uploaded_by_name || 'Unknown')} · ${new Date(d.uploaded_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
         ${canEdit ? `<button type="button" class="doc-remove" data-doc-id="${d.id}" aria-label="Remove ${escapeHtml(d.filename)}">Remove</button>` : ''}
       </li>`
@@ -328,34 +356,80 @@ function wireDocuments() {
     input.value = ''; // so the same file can be picked again after removing it
   });
 
-  // Both dragover and dragenter must be cancelled, or the browser opens the
+  // The whole deal window takes drops, not just the dashed box. The form is
+  // taller than the screen, so the box is usually scrolled out of sight while
+  // someone is dragging a file in - aiming at it was the first version of this
+  // and it silently swallowed anything dropped on the rest of the form.
+  const modal = document.getElementById('dealModal');
+  const carriesFiles = (e) => Array.from((e.dataTransfer && e.dataTransfer.types) || []).includes('Files');
+
+  // Both dragenter and dragover must be cancelled, or the browser opens the
   // file instead of letting the page have it.
+  // The default is always cancelled, even for someone who can't attach
+  // anything: without that the browser navigates to the dropped file and the
+  // half-filled form goes with it. Whether it is accepted is decided after.
+  const canAttachNow = () => !zone.classList.contains('hidden');
+
   ['dragenter', 'dragover'].forEach((type) =>
-    zone.addEventListener(type, (e) => {
+    modal.addEventListener(type, (e) => {
+      if (!carriesFiles(e)) return;
       e.preventDefault();
+      if (!canAttachNow()) return;
+      modal.classList.add('drop-target');
       zone.classList.add('dragover');
     })
   );
-  ['dragleave', 'drop'].forEach((type) =>
-    zone.addEventListener(type, (e) => {
-      e.preventDefault();
-      if (type === 'dragleave' && zone.contains(e.relatedTarget)) return;
-      zone.classList.remove('dragover');
-    })
-  );
-  zone.addEventListener('drop', async (e) => {
-    if (e.dataTransfer && e.dataTransfer.files.length) await addFiles(e.dataTransfer.files);
+
+  const endDrag = () => {
+    modal.classList.remove('drop-target');
+    zone.classList.remove('dragover');
+  };
+
+  modal.addEventListener('dragleave', (e) => {
+    // leaving for a child element is not leaving
+    if (e.relatedTarget && modal.contains(e.relatedTarget)) return;
+    endDrag();
   });
 
-  // A file dropped anywhere else would otherwise navigate away from the page
-  // and lose whatever is half-typed in the form.
+  modal.addEventListener('drop', async (e) => {
+    if (!carriesFiles(e)) return;
+    e.preventDefault();
+    endDrag();
+    if (!canAttachNow()) return;
+    if (e.dataTransfer.files.length) {
+      await addFiles(e.dataTransfer.files);
+      // the list is at the bottom of a long form, so show what just happened
+      document.getElementById('documentsSection').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  });
+
+  // A file dropped outside the deal window would otherwise navigate away from
+  // the page and lose whatever is half-typed in the form.
   ['dragover', 'drop'].forEach((type) =>
     window.addEventListener(type, (e) => {
-      if (!zone.contains(e.target)) e.preventDefault();
+      if (!modal.contains(e.target)) e.preventDefault();
     })
   );
 
+  document.getElementById('closePreview').addEventListener('click', closePreview);
+  document.getElementById('previewModal').addEventListener('click', (e) => {
+    // clicking the dark surround closes it, the sheet itself does not
+    if (e.target.id === 'previewModal') closePreview();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !document.getElementById('previewModal').classList.contains('hidden')) {
+      closePreview();
+    }
+  });
+
   document.getElementById('docList').addEventListener('click', async (e) => {
+    const preview = e.target.closest('[data-preview-id]');
+    if (preview) {
+      const doc = savedDocuments.find((d) => String(d.id) === preview.dataset.previewId);
+      if (doc) openPreview(doc);
+      return;
+    }
+
     const button = e.target.closest('.doc-remove');
     if (!button) return;
 

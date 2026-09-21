@@ -71,6 +71,18 @@ const DOCUMENT_TYPES = {
   '.zip': 'application/zip'
 };
 
+// What can be shown in the browser rather than only saved. Deliberately narrow:
+// PDFs and ordinary images. Everything else - Word, Excel, ZIP - has no viewer
+// here and would need the file handed to an outside service to render, which is
+// not something customer paperwork should be doing.
+const PREVIEWABLE_TYPES = [
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif'
+];
+
 // 50 MB per deal, counted across everything attached to it. A business rule
 // rather than a platform limit - Postgres would take far more - so it is set
 // here and can be raised without touching anything else.
@@ -91,6 +103,7 @@ module.exports = {
   DEFAULT_PROBABILITIES,
   HISTORY_ACTIONS,
   DOCUMENT_TYPES,
+  PREVIEWABLE_TYPES,
   MAX_DEAL_DOCUMENT_BYTES,
   sqlList
 };

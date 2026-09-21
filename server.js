@@ -13,7 +13,8 @@ const {
   ROLES,
   CAN_EDIT_DEALS: EDIT_DEAL_ROLES,
   CAN_MANAGE_USERS: MANAGE_USER_ROLES,
-  DOCUMENT_TYPES
+  DOCUMENT_TYPES,
+  PREVIEWABLE_TYPES
 } = require('./constants');
 
 const app = express();
@@ -455,6 +456,7 @@ app.get(
       // so the upload area can name what it accepts, and refuse the obvious
       // cases before pushing a file over the wire
       documentExtensions: Object.keys(DOCUMENT_TYPES),
+      documentPreviewTypes: PREVIEWABLE_TYPES,
       maxDealDocumentBytes: config.maxDealDocumentBytes
     });
   })
@@ -1072,18 +1074,25 @@ app.get(
     );
     if (!doc) return res.status(404).json({ error: 'Document not found' });
 
-    // Always handed over as a download. Nothing uploaded here is ever rendered
-    // in the browser, so a file that turns out to contain something other than
-    // what its name claims has no opportunity to run.
+    // Saved by default. Shown in the browser only when asked for and only for
+    // the handful of types with a viewer - and even then the type served is the
+    // one the extension implies, sent with nosniff, so a file that is not what
+    // its name claims is never interpreted as whatever it actually contains.
+    const wantsInline = req.query.inline === '1' && PREVIEWABLE_TYPES.includes(doc.content_type);
     const asciiName = doc.filename.replace(/[^\x20-\x7e]/g, '_');
     res.setHeader('Content-Type', doc.content_type);
     res.setHeader('Content-Length', doc.byte_size);
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(doc.filename)}`
+      `${wantsInline ? 'inline' : 'attachment'}; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(doc.filename)}`
     );
     // These are customer documents: keep them out of any shared cache.
     res.setHeader('Cache-Control', 'private, no-store');
+    // The preview frames this response from the app itself, which the global
+    // frame-ancestors 'none' blocks. Relaxed to 'self' on this response alone:
+    // no other site can frame a document, and every page of the app stays
+    // unframeable entirely.
+    if (wantsInline) res.setHeader('Content-Security-Policy', "frame-ancestors 'self'");
     res.send(doc.bytes);
   })
 );

@@ -8,7 +8,7 @@ Brand palette and typography carried over from the NVF brand guidelines — see 
 
 - Tracks deals through a pipeline: **Lead → Qualified → Proposal Sent → Negotiation → Won / Lost**
 - Records customer, contact, product category (Tiles / Sanitaryware / Marble / Wallpaper / Furniture / Mixed / Other), value, cost, probability, expected close date, owner and notes
-- **Documents on a deal** — quotes, purchase orders, invoices and spec sheets, dragged and dropped onto the deal or picked from a file dialog, up to 50 MB per deal
+- **Documents on a deal** — quotes, purchase orders, invoices and spec sheets, dropped anywhere on the deal window or picked from a file dialog, up to 50 MB per deal. PDFs and images open in a preview inside the app; everything else downloads
 - **Gross profit tracking** — enter the cost against a deal and the app derives margin % and GP (see [Gross profit](#gross-profit))
 - Dashboard with a **period dropdown**: This Month, Year to Date, Full Year (previous/current/next two years), or a custom date range
 - KPI cards: open pipeline value, weighted pipeline, pipeline gross profit, confirmed/won value, won gross profit, win rate

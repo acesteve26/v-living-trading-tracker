@@ -733,11 +733,93 @@ td.negative { color: var(--burnt-orange); }
 a.doc-name:hover,
 a.doc-name:focus-visible { color: var(--burnt-orange); border-bottom-color: currentColor; }
 
+/* A previewable document opens rather than downloads, so it is a button - but
+   it should read as the same thing as the links beside it. */
+.doc-name.as-button {
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--mineral-sand);
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.doc-name.as-button:hover,
+.doc-name.as-button:focus-visible { color: var(--burnt-orange); border-bottom-color: currentColor; }
+
 .doc-meta {
   color: var(--text-muted);
   font-size: 12px;
   margin-left: auto;
   white-space: nowrap;
+}
+
+/* While a file is over the deal window, the whole sheet says so - the dashed
+   box is usually scrolled out of view at that moment. */
+.modal-backdrop.drop-target .modal {
+  outline: 2px solid var(--burnt-orange);
+  outline-offset: -2px;
+}
+.modal-backdrop.drop-target .modal::after {
+  content: 'Drop to attach to this deal';
+  position: sticky;
+  bottom: 0;
+  display: block;
+  margin: 12px -32px -32px;
+  padding: 10px;
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--soft-canvas);
+  background: var(--burnt-orange);
+}
+
+/* ---------- document preview ---------- */
+.preview-modal {
+  max-width: min(1000px, 94vw);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  max-height: 92vh;
+}
+
+.preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.preview-head h2 {
+  margin: 0;
+  font-size: 16px;
+  word-break: break-all;
+}
+.preview-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+.preview-body {
+  flex: 1;
+  min-height: 0;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-frame {
+  width: 100%;
+  height: 78vh;
+  border: none;
+  background: var(--soft-canvas);
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: 78vh;
+  object-fit: contain;
 }
 
 .doc-remove {
