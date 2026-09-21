@@ -143,6 +143,8 @@ function describeChange(h, labels) {
   if (h.action === 'deleted') return 'Deal permanently deleted';
   if (h.action === 'archived') return 'Deal archived';
   if (h.action === 'restored') return 'Deal restored from the archive';
+  if (h.action === 'document_added') return `Document attached: ${escapeHtml(h.new_value)}`;
+  if (h.action === 'document_removed') return `Document removed: ${escapeHtml(h.old_value)}`;
   const label = labels[h.field] || h.field;
   const from = h.old_value === null || h.old_value === '' ? 'empty' : h.old_value;
   const to = h.new_value === null || h.new_value === '' ? 'empty' : h.new_value;
@@ -175,6 +177,206 @@ async function loadActivity(dealId) {
   }
 }
 
+// ---------- documents ----------
+// A deal being added doesn't exist yet, so files dropped on it are held here
+// and uploaded the moment the deal is saved.
+let pendingFiles = [];
+let savedDocuments = [];
+
+function docMaxBytes() {
+  return window.__APP_DOC_MAX_BYTES__ || 50 * 1024 * 1024;
+}
+
+function allowedExtensions() {
+  return window.__APP_DOC_EXTENSIONS__ || [];
+}
+
+function extensionOf(name) {
+  const dot = String(name || '').lastIndexOf('.');
+  return dot > 0 ? name.slice(dot).toLowerCase() : '';
+}
+
+function documentsUsedBytes() {
+  return (
+    savedDocuments.reduce((sum, d) => sum + d.byte_size, 0) +
+    pendingFiles.reduce((sum, f) => sum + f.size, 0)
+  );
+}
+
+function renderDocuments() {
+  const list = document.getElementById('docList');
+  const usage = document.getElementById('docUsage');
+  const canEdit = currentUser && currentUser.canEditDeals;
+
+  const rows = [
+    ...savedDocuments.map(
+      (d) => `<li class="doc-row">
+        <a class="doc-name" href="/api/documents/${d.id}" download>${escapeHtml(d.filename)}</a>
+        <span class="doc-meta">${fileSize(d.byte_size)} · ${escapeHtml(d.uploaded_by_name || 'Unknown')} · ${new Date(d.uploaded_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+        ${canEdit ? `<button type="button" class="doc-remove" data-doc-id="${d.id}" aria-label="Remove ${escapeHtml(d.filename)}">Remove</button>` : ''}
+      </li>`
+    ),
+    ...pendingFiles.map(
+      (f, i) => `<li class="doc-row pending">
+        <span class="doc-name">${escapeHtml(f.name)}</span>
+        <span class="doc-meta">${fileSize(f.size)} · attaches when you save</span>
+        <button type="button" class="doc-remove" data-pending-index="${i}" aria-label="Remove ${escapeHtml(f.name)}">Remove</button>
+      </li>`
+    )
+  ];
+
+  list.innerHTML = rows.length
+    ? rows.join('')
+    : '<li class="muted-note">No documents attached yet.</li>';
+
+  const used = documentsUsedBytes();
+  usage.textContent = `${fileSize(used)} of ${fileSize(docMaxBytes())} used`;
+  usage.classList.toggle('near-limit', used > docMaxBytes() * 0.8);
+}
+
+async function loadDocuments(dealId) {
+  try {
+    const data = await api(`/api/deals/${dealId}/documents`);
+    savedDocuments = data.documents;
+  } catch (e) {
+    savedDocuments = [];
+    document.getElementById('docErr').textContent = `Could not load documents: ${e.message}`;
+  }
+  renderDocuments();
+}
+
+// Checked here so an obviously wrong file is refused instantly rather than
+// after a 40 MB round trip. The server enforces the same rules regardless.
+function rejectionReason(file) {
+  const ext = extensionOf(file.name);
+  const allowed = allowedExtensions();
+  if (allowed.length && !allowed.includes(ext)) {
+    return `${file.name} can't be attached (${ext || 'no file extension'}). Allowed: ${allowed.join(', ')}`;
+  }
+  if (file.size === 0) return `${file.name} is empty`;
+  if (documentsUsedBytes() + file.size > docMaxBytes()) {
+    const left = Math.max(0, docMaxBytes() - documentsUsedBytes());
+    return `${file.name} is ${fileSize(file.size)} and only ${fileSize(left)} is left for this deal`;
+  }
+  return null;
+}
+
+async function addFiles(fileList) {
+  const errEl = document.getElementById('docErr');
+  errEl.textContent = '';
+  const dealId = document.getElementById('dealId').value;
+  const problems = [];
+
+  for (const file of Array.from(fileList)) {
+    const reason = rejectionReason(file);
+    if (reason) {
+      problems.push(reason);
+      continue;
+    }
+    if (dealId) {
+      try {
+        const { document: saved } = await apiUpload(`/api/deals/${dealId}/documents`, file);
+        savedDocuments.unshift(saved);
+      } catch (e) {
+        problems.push(`${file.name}: ${e.message}`);
+      }
+    } else {
+      pendingFiles.push(file);
+    }
+    renderDocuments();
+  }
+
+  if (problems.length) errEl.textContent = problems.join(' · ');
+}
+
+// Called after a brand-new deal is created, to attach whatever was queued.
+async function uploadPendingFiles(dealId) {
+  const failures = [];
+  for (const file of pendingFiles) {
+    try {
+      await apiUpload(`/api/deals/${dealId}/documents`, file);
+    } catch (e) {
+      failures.push(`${file.name}: ${e.message}`);
+    }
+  }
+  pendingFiles = [];
+  return failures;
+}
+
+function wireDocuments() {
+  const zone = document.getElementById('dropzone');
+  const input = document.getElementById('fileInput');
+
+  document.getElementById('dropzoneTypes').textContent = allowedExtensions().length
+    ? `${allowedExtensions().join(' ')} · up to ${fileSize(docMaxBytes())} per deal`
+    : '';
+
+  const choose = () => input.click();
+  document.getElementById('btnChooseFiles').addEventListener('click', choose);
+  zone.addEventListener('click', (e) => {
+    if (e.target === zone || e.target.closest('.dropzone-main, .dropzone-sub, .dropzone-types')) choose();
+  });
+  zone.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      choose();
+    }
+  });
+
+  input.addEventListener('change', async () => {
+    await addFiles(input.files);
+    input.value = ''; // so the same file can be picked again after removing it
+  });
+
+  // Both dragover and dragenter must be cancelled, or the browser opens the
+  // file instead of letting the page have it.
+  ['dragenter', 'dragover'].forEach((type) =>
+    zone.addEventListener(type, (e) => {
+      e.preventDefault();
+      zone.classList.add('dragover');
+    })
+  );
+  ['dragleave', 'drop'].forEach((type) =>
+    zone.addEventListener(type, (e) => {
+      e.preventDefault();
+      if (type === 'dragleave' && zone.contains(e.relatedTarget)) return;
+      zone.classList.remove('dragover');
+    })
+  );
+  zone.addEventListener('drop', async (e) => {
+    if (e.dataTransfer && e.dataTransfer.files.length) await addFiles(e.dataTransfer.files);
+  });
+
+  // A file dropped anywhere else would otherwise navigate away from the page
+  // and lose whatever is half-typed in the form.
+  ['dragover', 'drop'].forEach((type) =>
+    window.addEventListener(type, (e) => {
+      if (!zone.contains(e.target)) e.preventDefault();
+    })
+  );
+
+  document.getElementById('docList').addEventListener('click', async (e) => {
+    const button = e.target.closest('.doc-remove');
+    if (!button) return;
+
+    if (button.dataset.pendingIndex !== undefined) {
+      pendingFiles.splice(Number(button.dataset.pendingIndex), 1);
+      renderDocuments();
+      return;
+    }
+
+    const id = button.dataset.docId;
+    if (!confirm('Remove this document? This cannot be undone.')) return;
+    try {
+      await api(`/api/documents/${id}`, { method: 'DELETE' });
+      savedDocuments = savedDocuments.filter((d) => String(d.id) !== String(id));
+      renderDocuments();
+    } catch (err) {
+      document.getElementById('docErr').textContent = err.message;
+    }
+  });
+}
+
 function updateGpReadout() {
   const el = document.getElementById('gpReadoutValue');
   const gp = grossProfit(document.getElementById('f_value').value, document.getElementById('f_cost').value);
@@ -200,6 +402,10 @@ function resetDealForm() {
   document.getElementById('f_stage').value = 'Lead';
   document.getElementById('f_probability').value = stageProbabilities.Lead ?? 10;
   document.getElementById('activitySection').classList.add('hidden');
+  pendingFiles = [];
+  savedDocuments = [];
+  document.getElementById('docErr').textContent = '';
+  renderDocuments();
   setLostReason(null);
   updateGpReadout();
 }
@@ -231,7 +437,13 @@ async function openDealModal(id) {
     document.getElementById('btnArchiveDeal').classList.toggle('hidden', openDealIsArchived);
     document.getElementById('btnRestoreDeal').classList.toggle('hidden', !openDealIsArchived);
     loadActivity(id);
+    loadDocuments(id);
   }
+
+  // An archived deal is a closed record: its documents stay readable, but
+  // nothing new goes on to it until someone restores it.
+  const canAttach = currentUser.canEditDeals && !openDealIsArchived;
+  document.getElementById('dropzone').classList.toggle('hidden', !canAttach);
   syncStageFields();
   updateGpReadout();
   document.getElementById('dealModal').classList.remove('hidden');
@@ -273,6 +485,7 @@ function collectDealForm() {
   document.getElementById('valueLabel').textContent = `Deal value (${cur}) *`;
   document.getElementById('costLabel').textContent = `Cost (${cur})`;
   document.getElementById('gpHeader').textContent = `GP (${cur})`;
+  wireDocuments();
 
   // Built from the server's list rather than hardcoded in the markup, so adding
   // a category is a one-line change in constants.js.
@@ -327,7 +540,20 @@ function collectDealForm() {
       if (id) {
         await api(`/api/deals/${id}`, { method: 'PUT', body });
       } else {
-        await api('/api/deals', { method: 'POST', body });
+        const { deal } = await api('/api/deals', { method: 'POST', body });
+        // The deal had no id while it was being typed, so anything dropped on
+        // it is attached now that there is something to attach it to.
+        const failures = await uploadPendingFiles(deal.id);
+        if (failures.length) {
+          // The deal itself saved; say what didn't, and leave the form open on
+          // it so the files can be tried again.
+          await loadDeals();
+          document.getElementById('dealId').value = deal.id;
+          document.getElementById('dealModalTitle').textContent = 'Edit Deal';
+          await loadDocuments(deal.id);
+          errEl.textContent = `Deal saved, but some documents did not attach: ${failures.join(' · ')}`;
+          return;
+        }
       }
       closeDealModal();
       await loadDeals();

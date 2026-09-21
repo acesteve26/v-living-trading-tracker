@@ -153,6 +153,26 @@
         </div>
         <div class="error-text" id="dealErr"></div>
 
+        <section class="documents" id="documentsSection">
+          <div class="documents-head">
+            <h3 class="activity-title">Documents</h3>
+            <span class="doc-usage" id="docUsage"></span>
+          </div>
+
+          <div class="dropzone" id="dropzone" tabindex="0" role="button"
+               aria-label="Add documents: choose files or drop them here">
+            <p class="dropzone-main">Drag files here</p>
+            <p class="dropzone-sub">
+              or <span class="link-look" id="btnChooseFiles">choose files</span>
+            </p>
+            <p class="dropzone-types" id="dropzoneTypes"></p>
+            <input type="file" id="fileInput" multiple class="visually-hidden" />
+          </div>
+
+          <ul class="doc-list" id="docList"></ul>
+          <div class="error-text" id="docErr"></div>
+        </section>
+
         <section class="activity hidden" id="activitySection">
           <h3 class="activity-title">Activity</h3>
           <ol class="activity-list" id="activityList"></ol>

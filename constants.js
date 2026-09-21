@@ -36,7 +36,45 @@ const DEFAULT_PROBABILITIES = {
   Lost: 0
 };
 
-const HISTORY_ACTIONS = ['created', 'updated', 'deleted', 'archived', 'restored'];
+const HISTORY_ACTIONS = [
+  'created',
+  'updated',
+  'deleted',
+  'archived',
+  'restored',
+  'document_added',
+  'document_removed'
+];
+
+// What can be attached to a deal. This is an allowlist by extension, and the
+// content type sent back on download is taken from here rather than from
+// whatever the browser claimed at upload time - a file that says it is a PDF
+// and isn't should still be handed over as a PDF for saving, never interpreted.
+// SVG and HTML are absent deliberately: both can carry script, and a document
+// store is not a place to host pages.
+const DOCUMENT_TYPES = {
+  '.pdf': 'application/pdf',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.heic': 'image/heic',
+  '.txt': 'text/plain',
+  '.csv': 'text/csv',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.ppt': 'application/vnd.ms-powerpoint',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.zip': 'application/zip'
+};
+
+// 50 MB per deal, counted across everything attached to it. A business rule
+// rather than a platform limit - Postgres would take far more - so it is set
+// here and can be raised without touching anything else.
+const MAX_DEAL_DOCUMENT_BYTES = 50 * 1024 * 1024;
 
 // Renders a list as a SQL IN clause. Values here are developer-defined, never
 // user input, but quotes are escaped anyway so a stray apostrophe in a future
@@ -52,5 +90,7 @@ module.exports = {
   CAN_MANAGE_USERS,
   DEFAULT_PROBABILITIES,
   HISTORY_ACTIONS,
+  DOCUMENT_TYPES,
+  MAX_DEAL_DOCUMENT_BYTES,
   sqlList
 };

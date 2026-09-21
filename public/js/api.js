@@ -13,6 +13,28 @@ async function api(path, options = {}) {
   return data;
 }
 
+// Uploads send the file as the whole request body, with its name in the query
+// string. There is no multipart form to build, and the browser streams the File
+// object straight through.
+async function apiUpload(path, file) {
+  const res = await fetch(`${path}?filename=${encodeURIComponent(file.name)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: file
+  });
+  let data = {};
+  try { data = await res.json(); } catch (e) { /* no body */ }
+  if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
+  return data;
+}
+
+const fileSize = (bytes) => {
+  const n = Number(bytes || 0);
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 const money = (n, currency) => {
   const c = currency || (window.__APP_CURRENCY__ || 'AED');
   const value = Number(n || 0);
@@ -163,6 +185,8 @@ async function loadCurrency() {
     window.__APP_TZ__ = data.businessTimezone || 'Asia/Dubai';
     window.__APP_CATEGORIES__ = data.productCategories || [];
     window.__APP_STAGES__ = data.stages || [];
+    window.__APP_DOC_EXTENSIONS__ = data.documentExtensions || [];
+    window.__APP_DOC_MAX_BYTES__ = data.maxDealDocumentBytes || 0;
     return settings;
   } catch (e) {
     window.__APP_CURRENCY__ = 'AED';

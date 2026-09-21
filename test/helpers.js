@@ -74,6 +74,26 @@ function createClient() {
       try { data = await res.json(); } catch { /* no body */ }
       return { status: res.status, body: data };
     },
+    // Uploads and downloads are the one place the app moves bytes rather than
+    // JSON, so they need a route around the JSON client above.
+    async upload(path, filename, bytes, contentType = 'application/octet-stream') {
+      const res = await fetch(`${baseUrl}${path}?filename=${encodeURIComponent(filename)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': contentType, ...(cookie ? { Cookie: cookie } : {}) },
+        body: bytes
+      });
+      let data = null;
+      try { data = await res.json(); } catch { /* no body */ }
+      return { status: res.status, body: data };
+    },
+    async download(path) {
+      const res = await fetch(`${baseUrl}${path}`, { headers: cookie ? { Cookie: cookie } : {} });
+      return {
+        status: res.status,
+        headers: res.headers,
+        bytes: Buffer.from(await res.arrayBuffer())
+      };
+    },
     get(path) { return this.request('GET', path); },
     post(path, body) { return this.request('POST', path, body); },
     put(path, body) { return this.request('PUT', path, body); },

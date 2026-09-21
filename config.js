@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { MAX_DEAL_DOCUMENT_BYTES } = require('./constants');
 
 const envPath = path.join(__dirname, '.env');
 
@@ -91,5 +92,9 @@ module.exports = {
 
   // Tests point this at a throwaway schema in the same database, so they can
   // create and drop real tables without touching development data.
-  dbSchema: process.env.DB_SCHEMA || 'public'
+  dbSchema: process.env.DB_SCHEMA || 'public',
+
+  // The attachment ceiling per deal. Overridable so the tests can prove the cap
+  // is enforced without pushing 50 MB over the wire on every run.
+  maxDealDocumentBytes: Number(process.env.MAX_DEAL_DOCUMENT_BYTES) || MAX_DEAL_DOCUMENT_BYTES
 };

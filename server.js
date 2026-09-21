@@ -12,7 +12,8 @@ const {
   OPEN_STAGES,
   ROLES,
   CAN_EDIT_DEALS: EDIT_DEAL_ROLES,
-  CAN_MANAGE_USERS: MANAGE_USER_ROLES
+  CAN_MANAGE_USERS: MANAGE_USER_ROLES,
+  DOCUMENT_TYPES
 } = require('./constants');
 
 const app = express();
@@ -450,7 +451,11 @@ app.get(
       stageProbabilities: db.defaultProbabilities,
       businessTimezone: config.businessTimezone,
       productCategories: PRODUCT_CATEGORIES,
-      stages: STAGES
+      stages: STAGES,
+      // so the upload area can name what it accepts, and refuse the obvious
+      // cases before pushing a file over the wire
+      documentExtensions: Object.keys(DOCUMENT_TYPES),
+      maxDealDocumentBytes: config.maxDealDocumentBytes
     });
   })
 );
@@ -898,6 +903,226 @@ app.delete(
   })
 );
 
+// ---------- deal documents ----------
+//
+// Uploads arrive as the raw file in the request body with the name in the query
+// string, rather than as a multipart form. It does the same job for one file at
+// a time, needs no parsing library, and keeps the whole multipart surface out of
+// the app. The browser sends the File object straight through as the body.
+
+const MAX_FILENAME_LENGTH = 200;
+
+// Everything about a stored file is decided here, from the extension alone.
+// The browser's Content-Type is never trusted: it is trivially set to anything,
+// and this is what the file will later be served as.
+function documentTypeFor(filename) {
+  const dot = filename.lastIndexOf('.');
+  if (dot <= 0) return null;
+  return DOCUMENT_TYPES[filename.slice(dot).toLowerCase()] || null;
+}
+
+// A filename is attacker-controlled text that later goes into a response
+// header, so it is reduced to a bare name: no directories, no control
+// characters, no leading dots, and a sane length.
+function safeFilename(raw) {
+  const name = String(raw || '')
+    .split(/[\\/]/)
+    .pop()
+    .replace(/[\x00-\x1f\x7f"]/g, '')
+    .replace(/^\.+/, '')
+    .trim();
+  if (!name) return '';
+  if (name.length <= MAX_FILENAME_LENGTH) return name;
+  // trim the middle, not the end, so the extension survives
+  const dot = name.lastIndexOf('.');
+  const ext = dot > 0 ? name.slice(dot) : '';
+  return name.slice(0, MAX_FILENAME_LENGTH - ext.length) + ext;
+}
+
+// Sizes appear in messages people read, so a 40 KB file is never described as
+// "0.0 MB". Matches the formatting the browser uses.
+function humanSize(bytes) {
+  const n = Number(bytes || 0);
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const DOCUMENT_COLUMNS = `id, deal_id, filename, content_type, byte_size, uploaded_by_name, uploaded_at`;
+
+async function documentUsage(dealId, exec) {
+  const row = await db.one(
+    'SELECT COALESCE(SUM(byte_size), 0)::int AS used FROM deal_documents WHERE deal_id = $1',
+    [dealId],
+    exec
+  );
+  return row.used;
+}
+
+app.get(
+  '/api/deals/:id/documents',
+  requireAuth,
+  route(async (req, res) => {
+    const deal = await loadDeal(req.params.id);
+    if (!deal) return res.status(404).json({ error: 'Deal not found' });
+
+    const documents = await db.all(
+      `SELECT ${DOCUMENT_COLUMNS} FROM deal_documents WHERE deal_id = $1 ORDER BY uploaded_at DESC`,
+      [req.params.id]
+    );
+    res.json({
+      documents,
+      usedBytes: documents.reduce((sum, d) => sum + d.byte_size, 0),
+      maxBytes: config.maxDealDocumentBytes
+    });
+  })
+);
+
+app.post(
+  '/api/deals/:id/documents',
+  requireDealEditor,
+  // Anything may be sent; what is actually allowed is decided below from the
+  // extension. The limit stops an oversized body being read into memory at all.
+  express.raw({ type: () => true, limit: config.maxDealDocumentBytes }),
+  route(async (req, res) => {
+    const deal = await loadDeal(req.params.id);
+    if (!deal) return res.status(404).json({ error: 'Deal not found' });
+    if (deal.archived_at) {
+      return res.status(400).json({ error: 'Restore this deal before attaching documents to it.' });
+    }
+
+    const filename = safeFilename(req.query.filename);
+    if (!filename) return res.status(400).json({ error: 'A filename is required' });
+
+    const contentType = documentTypeFor(filename);
+    if (!contentType) {
+      return res.status(400).json({
+        error: `That file type can't be attached. Allowed types: ${Object.keys(DOCUMENT_TYPES).join(', ')}`
+      });
+    }
+
+    const bytes = req.body;
+    if (!Buffer.isBuffer(bytes) || bytes.length === 0) {
+      return res.status(400).json({ error: 'That file is empty' });
+    }
+
+    const document = await db.transaction(async (client) => {
+      // Locking the deal row serialises uploads against it, so two files
+      // arriving together can't each see room under the cap and both take it.
+      await db.query('SELECT id FROM deals WHERE id = $1 FOR UPDATE', [req.params.id], client);
+
+      const used = await documentUsage(req.params.id, client);
+      if (used + bytes.length > config.maxDealDocumentBytes) {
+        const remaining = Math.max(0, config.maxDealDocumentBytes - used);
+        const problem = new Error(
+          remaining === 0
+            ? `This deal has used its whole ${humanSize(config.maxDealDocumentBytes)} of attachments. Remove something before adding more.`
+            : `That file is ${humanSize(bytes.length)} and only ${humanSize(remaining)} is left of this deal's ${humanSize(config.maxDealDocumentBytes)}.`
+        );
+        problem.status = 400;
+        throw problem;
+      }
+
+      const row = await db.one(
+        `INSERT INTO deal_documents (deal_id, filename, content_type, byte_size, bytes, uploaded_by, uploaded_by_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         RETURNING ${DOCUMENT_COLUMNS}`,
+        [
+          req.params.id,
+          filename,
+          contentType,
+          bytes.length,
+          bytes,
+          req.session.user.id,
+          req.session.user.name
+        ],
+        client
+      );
+
+      await recordHistory(
+        [
+          {
+            deal_id: Number(req.params.id),
+            deal_name: deal.customer_name,
+            changed_by: req.session.user.id,
+            changed_by_name: req.session.user.name,
+            action: 'document_added',
+            field: 'document',
+            old_value: null,
+            new_value: filename
+          }
+        ],
+        client
+      );
+
+      return row;
+    });
+
+    res.json({ document });
+  })
+);
+
+app.get(
+  '/api/documents/:docId',
+  requireAuth,
+  route(async (req, res) => {
+    const doc = await db.one(
+      'SELECT filename, content_type, byte_size, bytes FROM deal_documents WHERE id = $1',
+      [req.params.docId]
+    );
+    if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+    // Always handed over as a download. Nothing uploaded here is ever rendered
+    // in the browser, so a file that turns out to contain something other than
+    // what its name claims has no opportunity to run.
+    const asciiName = doc.filename.replace(/[^\x20-\x7e]/g, '_');
+    res.setHeader('Content-Type', doc.content_type);
+    res.setHeader('Content-Length', doc.byte_size);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(doc.filename)}`
+    );
+    // These are customer documents: keep them out of any shared cache.
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(doc.bytes);
+  })
+);
+
+app.delete(
+  '/api/documents/:docId',
+  requireDealEditor,
+  route(async (req, res) => {
+    const doc = await db.one(
+      `SELECT d.id, d.deal_id, d.filename, deals.customer_name
+       FROM deal_documents d JOIN deals ON deals.id = d.deal_id
+       WHERE d.id = $1`,
+      [req.params.docId]
+    );
+    if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+    await db.transaction(async (client) => {
+      await db.query('DELETE FROM deal_documents WHERE id = $1', [req.params.docId], client);
+      await recordHistory(
+        [
+          {
+            deal_id: doc.deal_id,
+            deal_name: doc.customer_name,
+            changed_by: req.session.user.id,
+            changed_by_name: req.session.user.name,
+            action: 'document_removed',
+            field: 'document',
+            old_value: doc.filename,
+            new_value: null
+          }
+        ],
+        client
+      );
+    });
+
+    res.json({ ok: true });
+  })
+);
+
 // ---------- dashboard ----------
 function computeRange(range, fromQ, toQ) {
   const parts = businessNowParts();
@@ -1266,6 +1491,18 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use((err, req, res, next) => {
   console.error('Request failed:', req.method, req.path, '-', err.message);
   if (res.headersSent) return next(err);
+
+  // A body over the upload limit is rejected by the body parser before any
+  // route sees it, and would otherwise surface as a bare 500.
+  if (err.type === 'entity.too.large') {
+    return res
+      .status(413)
+      .json({ error: `That file is too large. The limit is ${humanSize(config.maxDealDocumentBytes)} per deal.` });
+  }
+
+  // Routes raise these deliberately, with a message meant for the person.
+  if (err.status && err.status < 500) return res.status(err.status).json({ error: err.message });
+
   res.status(500).json({ error: 'Something went wrong. Please try again.' });
 });
 

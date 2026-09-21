@@ -7,13 +7,14 @@ Brand palette and typography carried over from the NVF brand guidelines — see 
 ## What it does
 
 - Tracks deals through a pipeline: **Lead → Qualified → Proposal Sent → Negotiation → Won / Lost**
-- Records customer, contact, product category (Tiles / Sanitaryware / Both / Other), value, cost, probability, expected close date, owner and notes
+- Records customer, contact, product category (Tiles / Sanitaryware / Marble / Wallpaper / Furniture / Mixed / Other), value, cost, probability, expected close date, owner and notes
+- **Documents on a deal** — quotes, purchase orders, invoices and spec sheets, dragged and dropped onto the deal or picked from a file dialog, up to 50 MB per deal
 - **Gross profit tracking** — enter the cost against a deal and the app derives margin % and GP (see [Gross profit](#gross-profit))
 - Dashboard with a **period dropdown**: This Month, Year to Date, Full Year (previous/current/next two years), or a custom date range
 - KPI cards: open pipeline value, weighted pipeline, pipeline gross profit, confirmed/won value, won gross profit, win rate
 - Charts: monthly pipeline vs. won trend, pipeline by stage, pipeline by product category
 - Tables: top open deals, recently won deals
-- Basic login with two roles: **Admin** (manages users & settings) and **Sales** (manages deals)
+- Login with four roles: **Admin** (manages users & settings), **Sales** (manages deals), and **Management** / **Accounts**, which can view everything and run reports but not change deals
 
 ## 1. Prerequisites — install Node.js
 
@@ -161,6 +162,7 @@ Your pipeline lives in **PostgreSQL**, not in a file in this folder.
 - **Hosted on Render:** Render takes automatic daily backups on paid plans, with point-in-time recovery. Check the retention window on your plan — free databases are time-limited and are deleted when they expire.
 - **Manual backup:** `pg_dump "$DATABASE_URL" > backup.sql` produces a single restorable file. Worth running before anything risky.
 - **Never commit `.env`** — it holds the database credentials. It is gitignored, and that is deliberate.
+- **Documents attached to deals are inside the database**, in `deal_documents`, not on a disk. That is the reason for the choice: a `pg_dump` or a Render backup captures a deal and its paperwork together, and restoring brings back a matching pair. A separate file store would be a second backup that can disagree with the first. It does mean backups grow with the files — at 50 MB per deal that is slow to become a problem, but worth knowing.
 
 The old SQLite file in `data/` is kept only so [scripts/migrate-from-sqlite.js](scripts/migrate-from-sqlite.js) can copy it across. Once your data is in Postgres, it is dead weight and can be deleted.
 

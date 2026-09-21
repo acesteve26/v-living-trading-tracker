@@ -147,6 +147,32 @@ CREATE TABLE IF NOT EXISTS deal_history (
 CREATE INDEX IF NOT EXISTS deal_history_deal_idx ON deal_history (deal_id, changed_at DESC);
 CREATE INDEX IF NOT EXISTS deal_history_when_idx ON deal_history (changed_at DESC);
 
+-- Quotes, purchase orders, invoices and spec sheets attached to a deal. The
+-- file contents live in Postgres rather than on a disk so that a document and
+-- the deal it belongs to are captured by the same backup and restored together
+-- - a disk would give two backups that can disagree with each other.
+--
+-- The bytes sit in their own table on purpose. Listing a deal's attachments
+-- reads metadata only; the contents are fetched solely when someone downloads
+-- one, so no ordinary query ever drags a 40 MB PDF through memory.
+--
+-- Deleting a deal takes its documents with it. Unlike history, which is kept
+-- precisely because it is the record of what happened, a file attached to a
+-- deal that no longer exists has nothing left to describe.
+CREATE TABLE IF NOT EXISTS deal_documents (
+  id SERIAL PRIMARY KEY,
+  deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+  filename TEXT NOT NULL,
+  content_type TEXT NOT NULL,
+  byte_size INTEGER NOT NULL CHECK (byte_size > 0),
+  bytes BYTEA NOT NULL,
+  uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  uploaded_by_name TEXT,
+  uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS deal_documents_deal_idx ON deal_documents (deal_id, uploaded_at DESC);
+
 -- Migrations for columns added after the first release. CREATE TABLE IF NOT
 -- EXISTS won't touch an existing table, so new columns go here. These are
 -- idempotent, so they run harmlessly on every boot.
