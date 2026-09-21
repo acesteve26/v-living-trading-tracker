@@ -268,6 +268,65 @@ describe('product categories', () => {
     }
   });
 
+  test("'Both' has been retired in favour of 'Mixed'", async () => {
+    assert.ok(PRODUCT_CATEGORIES.includes('Mixed'));
+    assert.ok(!PRODUCT_CATEGORIES.includes('Both'));
+    const res = await admin.post('/api/deals', h.baseDeal({ product_category: 'Both' }));
+    assert.equal(res.status, 400);
+  });
+
+  // The rename only matters on a database that already holds 'Both' rows, which
+  // a fresh test schema never does - so one is manufactured here. Without this
+  // the migration would first be exercised on the live data.
+  test("a deal recorded as 'Both' is carried over to 'Mixed' on boot", async () => {
+    const db = h.getDb();
+    const created = await admin.post('/api/deals', h.baseDeal({
+      customer_name: 'Legacy Both Deal',
+      product_category: 'Tiles'
+    }));
+    const id = created.body.deal.id;
+
+    // Put the database back the way it was before the rename: the row holds
+    // 'Both', and the constraint in force is the old one, which permits 'Both'
+    // and has never heard of 'Mixed'. Recreating that constraint matters - with
+    // no constraint at all the migration passes whatever order it runs in,
+    // which is how the first version of it got through.
+    await db.query('ALTER TABLE deals DROP CONSTRAINT deals_product_category_check');
+    await db.query('UPDATE deals SET product_category = $1 WHERE id = $2', ['Both', id]);
+    // NOT VALID because the sibling test above has already put deals in the
+    // newer categories, and a constraint from the old world cannot be applied
+    // to those retrospectively. It is still enforced on writes, which is the
+    // part that matters: the rename has to survive it.
+    await db.query(
+      `ALTER TABLE deals ADD CONSTRAINT deals_product_category_check
+       CHECK (product_category IN ('Tiles','Sanitaryware','Both','Other')) NOT VALID`
+    );
+    await db.query(
+      `INSERT INTO deal_history (deal_id, deal_name, action, field, old_value, new_value)
+       VALUES ($1, $2, 'updated', 'product_category', 'Tiles', 'Both')`,
+      [id, 'Legacy Both Deal']
+    );
+
+    await db.init(); // exactly what a deploy runs
+
+    const deal = await db.one('SELECT product_category FROM deals WHERE id = $1', [id]);
+    assert.equal(deal.product_category, 'Mixed', 'the deal should have been carried over');
+
+    const history = await db.all(
+      `SELECT new_value FROM deal_history WHERE deal_id = $1 AND field = 'product_category'`,
+      [id]
+    );
+    assert.ok(history.length > 0);
+    assert.ok(
+      history.every((h2) => h2.new_value !== 'Both'),
+      'the trail should not still name a category the app no longer has'
+    );
+
+    // and the rebuilt constraint is back in force
+    const res = await admin.post('/api/deals', h.baseDeal({ product_category: 'Both' }));
+    assert.equal(res.status, 400);
+  });
+
   test('every category is reported on, not just the ones with deals', async () => {
     const res = await admin.get('/api/dashboard?range=year:2027');
     for (const category of PRODUCT_CATEGORIES) {

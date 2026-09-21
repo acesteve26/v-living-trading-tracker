@@ -7,10 +7,10 @@ const db = require('../db');
 const sample = [
   ['Al Futtaim Interiors', 'Sanitaryware', 84000, 58800, 'Negotiation', 70, '2026-10-15', null],
   ['Coastal Ceramics LLC', 'Tiles', 45000, 33750, 'Proposal Sent', 50, '2026-09-30', null],
-  ['Horizon Build Supplies', 'Both', 132000, 90000, 'Qualified', 30, '2026-11-20', null],
+  ['Horizon Build Supplies', 'Mixed', 132000, 90000, 'Qualified', 30, '2026-11-20', null],
   ['Metro Bath & Tile', 'Sanitaryware', 27500, null, 'Lead', 10, '2026-12-05', null],
   ['Sunrise Developers', 'Tiles', 96000, 64300, 'Won', 100, '2026-08-10', '2026-08-12'],
-  ['Palm Grove Hotels', 'Both', 210000, 151200, 'Won', 100, '2026-07-01', '2026-07-05'],
+  ['Palm Grove Hotels', 'Mixed', 210000, 151200, 'Won', 100, '2026-07-01', '2026-07-05'],
   ['Jebel Ali Fittings Co', 'Sanitaryware', 38000, 29000, 'Lost', 0, '2026-06-15', '2026-06-20'],
   ['Bluewave Construction', 'Tiles', 61000, 42700, 'Negotiation', 70, '2027-01-15', null],
   ['Everstone Trading', 'Other', 15000, null, 'Lead', 10, '2027-02-01', null],

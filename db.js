@@ -175,6 +175,20 @@ CREATE INDEX IF NOT EXISTS deals_archived_idx ON deals (archived_at);
 -- from the shared list on every boot rather than staying pinned to whatever
 -- they were when the table was first created.
 ALTER TABLE deals DROP CONSTRAINT IF EXISTS deals_product_category_check;
+
+-- 'Both' meant tiles and sanitaryware back when those were the only two
+-- categories. Among seven it no longer says which two, so it is renamed to
+-- 'Mixed'. The order here is load-bearing and is what the tests pin down: the
+-- rename sits between the two statements either side of it, because the old
+-- constraint would refuse 'Mixed' and the new one would refuse 'Both'. The
+-- category itself is unchanged, so the history rows carrying the old label are
+-- renamed with it rather than left naming something the app no longer has.
+UPDATE deals SET product_category = 'Mixed' WHERE product_category = 'Both';
+UPDATE deal_history SET old_value = 'Mixed'
+  WHERE field = 'product_category' AND old_value = 'Both';
+UPDATE deal_history SET new_value = 'Mixed'
+  WHERE field = 'product_category' AND new_value = 'Both';
+
 ALTER TABLE deals ADD CONSTRAINT deals_product_category_check
   CHECK (product_category IN (${sqlList(PRODUCT_CATEGORIES)}));
 

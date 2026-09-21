@@ -12,7 +12,7 @@ const PRODUCT_CATEGORIES = [
   'Marble',
   'Wallpaper',
   'Furniture',
-  'Both',
+  'Mixed',
   'Other'
 ];
 
