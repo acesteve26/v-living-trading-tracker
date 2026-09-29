@@ -43,6 +43,58 @@ function resolvePeriod(key) {
   return null; // custom
 }
 
+// Overheads for the same dates, reported on their own terms. No net-of-GP
+// figure is shown anywhere: an expense is not a deal cost, and putting the two
+// in one number would invite reading it as deal performance.
+function renderExpenses(data) {
+  const ex = data.expenses || { items: [], total: 0, count: 0, byCategory: {} };
+
+  const ranked = Object.entries(ex.byCategory)
+    .filter(([, v]) => v.count > 0)
+    .sort((a, b) => b[1].total - a[1].total);
+
+  const biggest = ranked.length ? ranked[0] : null;
+
+  document.getElementById('expenseRow').innerHTML = [
+    stat('Total expenses', money(ex.total), `${ex.count} item${ex.count === 1 ? '' : 's'} in period`),
+    stat(
+      'Largest category',
+      biggest ? biggest[0] : '—',
+      biggest ? `${money(biggest[1].total)} · ${Math.round((biggest[1].total / ex.total) * 100)}% of the total` : 'Nothing recorded'
+    ),
+    stat('Categories used', String(ranked.length), `of ${Object.keys(ex.byCategory).length} available`)
+  ].join('');
+
+  document.getElementById('expenseCategoryBody').innerHTML = ranked.length
+    ? ranked
+        .map(
+          ([name, v]) => `<tr>
+            <td>${escapeHtml(name)}</td>
+            <td class="num">${v.count}</td>
+            <td class="num">${money(v.total)}</td>
+            <td class="num">${ex.total ? Math.round((v.total / ex.total) * 100) + '%' : '—'}</td>
+          </tr>`
+        )
+        .join('') +
+      `<tr class="total-row"><td>Total</td><td class="num">${ex.count}</td><td class="num">${money(ex.total)}</td><td class="num">100%</td></tr>`
+    : emptyRow(4, 'No expenses recorded in this period');
+
+  document.getElementById('expenseBody').innerHTML = ex.items.length
+    ? ex.items
+        .map(
+          (e) => `<tr>
+            <td>${pretty(e.expense_date)}</td>
+            <td>${escapeHtml(e.description)}</td>
+            <td>${escapeHtml(e.category)}</td>
+            <td>${escapeHtml(e.created_by_name || '—')}</td>
+            <td class="num">${money(e.amount)}</td>
+          </tr>`
+        )
+        .join('') +
+      `<tr class="total-row"><td colspan="4">Total</td><td class="num">${money(ex.total)}</td></tr>`
+    : emptyRow(5, 'No expenses recorded in this period');
+}
+
 function stat(label, value, sub, tone) {
   return `<div class="stat ${tone || ''}">
     <div class="stat-label">${label}</div>
@@ -181,6 +233,8 @@ async function loadReport() {
         )
         .join('')
     : emptyRow(6, 'No new deals added in this period');
+
+  renderExpenses(data);
 
   document.getElementById('openBody').innerHTML = data.openDeals.length
     ? data.openDeals

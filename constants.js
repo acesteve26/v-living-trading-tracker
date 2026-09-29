@@ -23,9 +23,31 @@ const OPEN_STAGES = ['Lead', 'Qualified', 'Proposal Sent', 'Negotiation'];
 
 const ROLES = ['admin', 'management', 'accounts', 'sales'];
 
+// What the business spends, as opposed to what a deal costs. Deal cost is
+// already captured on the deal and drives gross profit; these are the overheads
+// that sit alongside it, so the two are deliberately kept apart.
+const EXPENSE_CATEGORIES = [
+  'Rent',
+  'Salaries',
+  'Freight & Shipping',
+  'Customs & Duty',
+  'Marketing',
+  'Utilities',
+  'Travel',
+  'Office',
+  'Professional Fees',
+  'Other'
+];
+
 // Management and accounts oversee and report; they do not work the pipeline.
 const CAN_EDIT_DEALS = ['admin', 'sales'];
+// Expenses are a bookkeeping record, so they belong to the finance roles
+// rather than the sales ones. Everyone signed in can see them.
+const CAN_EDIT_EXPENSES = ['admin', 'accounts'];
 const CAN_MANAGE_USERS = ['admin'];
+// Seeing what people have been doing is an oversight job, not an editing one,
+// so management can read the activity log without being able to change anything.
+const CAN_VIEW_ACTIVITY = ['admin', 'management'];
 
 const DEFAULT_PROBABILITIES = {
   Lead: 10,
@@ -44,6 +66,27 @@ const HISTORY_ACTIONS = [
   'restored',
   'document_added',
   'document_removed'
+];
+
+// Everything worth recording that isn't a change to a deal. Deal changes stay
+// in deal_history, which already holds them with their before and after; these
+// are the things nothing was recording at all. The two are merged when read
+// rather than written twice, so they cannot drift apart.
+const ACTIVITY_ACTIONS = [
+  'signed_in',
+  'sign_in_failed',
+  'signed_out',
+  'password_changed',
+  'user_created',
+  'user_updated',
+  'user_deactivated',
+  'user_reactivated',
+  'user_password_reset',
+  'user_deleted',
+  'report_run',
+  'expense_created',
+  'expense_updated',
+  'expense_deleted'
 ];
 
 // What can be attached to a deal. This is an allowlist by extension, and the
@@ -99,7 +142,11 @@ module.exports = {
   OPEN_STAGES,
   ROLES,
   CAN_EDIT_DEALS,
+  CAN_EDIT_EXPENSES,
+  EXPENSE_CATEGORIES,
   CAN_MANAGE_USERS,
+  CAN_VIEW_ACTIVITY,
+  ACTIVITY_ACTIONS,
   DEFAULT_PROBABILITIES,
   HISTORY_ACTIONS,
   DOCUMENT_TYPES,

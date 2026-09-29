@@ -15,6 +15,14 @@
       <button class="btn" id="btnAddDeal">+ Add Deal</button>
     </div>
 
+    <!-- The coarse split people actually work in, kept out of the filter row
+         because it is the first choice made, not one filter among several. -->
+    <div class="segmented" id="statusFilter" role="group" aria-label="Which deals to show">
+      <button type="button" class="segment is-active" data-status="open">In Progress</button>
+      <button type="button" class="segment" data-status="all">All Deals</button>
+      <button type="button" class="segment" data-status="won">Won</button>
+    </div>
+
     <div class="toolbar">
       <input type="search" id="searchBox" placeholder="Search customer / contact / description…" style="min-width:240px;" />
       <select id="filterStage">

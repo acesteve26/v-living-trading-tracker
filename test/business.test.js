@@ -33,6 +33,69 @@ describe('stage transitions', () => {
     assert.ok(res.body.deal.won_lost_date, 'a won deal must have a date');
   });
 
+  test('winning a deal drags its expected close date to the day it was won', async () => {
+    const deal = await createDeal({
+      customer_name: 'Expected Close Follows',
+      stage: 'Negotiation',
+      expected_close_date: '2029-12-31'
+    });
+    assert.equal(deal.expected_close_date, '2029-12-31');
+
+    const res = await admin.put(`/api/deals/${deal.id}`, { ...deal, stage: 'Won', probability: 100 });
+    const won = res.body.deal;
+
+    assert.ok(won.won_lost_date, 'it should have a close date');
+    assert.equal(
+      won.expected_close_date,
+      won.won_lost_date,
+      'a won deal must not still be forecast to close in the future'
+    );
+  });
+
+  test('a deal logged after the fact keeps the date given, on both fields', async () => {
+    const deal = await createDeal({
+      customer_name: 'Backdated Win',
+      stage: 'Negotiation',
+      expected_close_date: '2029-11-30'
+    });
+
+    // caught up on paperwork: won last week, recorded today
+    const res = await admin.put(`/api/deals/${deal.id}`, {
+      ...deal,
+      stage: 'Won',
+      probability: 100,
+      won_lost_date: '2026-09-14'
+    });
+
+    assert.equal(res.body.deal.won_lost_date, '2026-09-14', 'the date typed in must win');
+    assert.equal(res.body.deal.expected_close_date, '2026-09-14', 'and the expected close follows it, not today');
+  });
+
+  test('editing a deal that is already won leaves its dates alone', async () => {
+    const deal = await createDeal({ customer_name: 'Already Won', stage: 'Won', won_lost_date: '2026-06-01' });
+    const before = { close: deal.expected_close_date, won: deal.won_lost_date };
+
+    const res = await admin.put(`/api/deals/${deal.id}`, { ...deal, description: 'Just a note change' });
+
+    assert.equal(res.body.deal.won_lost_date, before.won, 'the close date must not be re-stamped');
+    assert.equal(res.body.deal.expected_close_date, before.close, 'nor the expected close');
+  });
+
+  test('marking a deal lost does not touch its expected close date', async () => {
+    const deal = await createDeal({
+      customer_name: 'Lost Keeps Forecast',
+      stage: 'Negotiation',
+      expected_close_date: '2029-10-15'
+    });
+
+    const res = await admin.put(`/api/deals/${deal.id}`, { ...deal, stage: 'Lost', probability: 0 });
+    assert.equal(
+      res.body.deal.expected_close_date,
+      '2029-10-15',
+      'only winning settles the forecast; this was asked for Won alone'
+    );
+  });
+
   test('reopening a won deal clears the close date', async () => {
     const deal = await createDeal({ customer_name: 'Reopened', stage: 'Won' });
     assert.ok(deal.won_lost_date);
@@ -179,6 +242,70 @@ describe('period ranges', () => {
   test('an unrecognised range falls back to this month rather than erroring', () => {
     const r = computeRange('nonsense');
     assert.match(r.from, /^\d{4}-\d{2}-01$/);
+  });
+
+  test('a quarter runs from the first of its first month to the last of its third', () => {
+    const q2 = computeRange('quarter:2027-2');
+    assert.equal(q2.from, '2027-04-01');
+    assert.equal(q2.to, '2027-06-30');
+    assert.equal(q2.label, 'Q2 2027');
+
+    const q4 = computeRange('quarter:2026-4');
+    assert.equal(q4.from, '2026-10-01');
+    assert.equal(q4.to, '2026-12-31');
+  });
+
+  test('this quarter is the one the business is currently in', () => {
+    const r = computeRange('this_quarter');
+    const month = Number(r.from.split('-')[1]);
+    assert.ok([1, 4, 7, 10].includes(month), `a quarter must start in Jan, Apr, Jul or Oct, got month ${month}`);
+    assert.match(r.label, /^Q[1-4] \d{4}$/);
+  });
+});
+
+// -------------------------------------------------- the deals table split
+
+describe('in progress, all, or won', () => {
+  before(async () => {
+    await createDeal({ customer_name: 'Split Open', stage: 'Negotiation', expected_close_date: '2028-06-01' });
+    await createDeal({ customer_name: 'Split Won', stage: 'Won', won_lost_date: '2028-06-02' });
+    await createDeal({ customer_name: 'Split Lost', stage: 'Lost', won_lost_date: '2028-06-03' });
+  });
+
+  const names = (deals) => deals.map((d) => d.customer_name);
+
+  test('in progress leaves out won and lost alike', async () => {
+    const { deals } = (await admin.get('/api/deals?status=open')).body;
+    assert.ok(names(deals).includes('Split Open'));
+    assert.ok(!names(deals).includes('Split Won'), 'a won deal is not in progress');
+    assert.ok(
+      !names(deals).includes('Split Lost'),
+      'nor is a lost one - this has to agree with the pipeline figures on the dashboard'
+    );
+  });
+
+  test('won returns only won deals', async () => {
+    const { deals } = (await admin.get('/api/deals?status=won')).body;
+    assert.ok(deals.length > 0);
+    for (const d of deals) assert.equal(d.stage, 'Won');
+  });
+
+  test('all returns everything, whatever its stage', async () => {
+    const { deals } = (await admin.get('/api/deals?status=all')).body;
+    const found = names(deals);
+    for (const expected of ['Split Open', 'Split Won', 'Split Lost']) {
+      assert.ok(found.includes(expected), `${expected} should be in the unfiltered list`);
+    }
+  });
+
+  test('archived deals stay hidden whichever split is chosen', async () => {
+    const deal = await createDeal({ customer_name: 'Split Archived', stage: 'Won', won_lost_date: '2028-06-04' });
+    await admin.post(`/api/deals/${deal.id}/archive`);
+
+    for (const status of ['open', 'won', 'all']) {
+      const { deals } = (await admin.get(`/api/deals?status=${status}`)).body;
+      assert.ok(!names(deals).includes('Split Archived'), `archived deal leaked into "${status}"`);
+    }
   });
 });
 

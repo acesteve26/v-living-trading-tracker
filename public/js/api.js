@@ -81,9 +81,13 @@ function renderTopbar(activePage, user) {
   const navItems = [
     { href: '/index.html', label: 'Dashboard', key: 'dashboard' },
     { href: '/deals.html', label: 'Deals', key: 'deals' },
-    { href: '/report.html', label: 'Report', key: 'report' }
+    { href: '/report.html', label: 'Reports', key: 'report' },
+    { href: '/expenses.html', label: 'Expenses', key: 'expenses' }
   ];
-  if (user.canManageUsers) navItems.push({ href: '/users.html', label: 'Users', key: 'users' });
+  // Management gets here for the activity log, without being able to manage anyone
+  if (user.canManageUsers || user.canViewActivity) {
+    navItems.push({ href: '/users.html', label: 'Users', key: 'users' });
+  }
 
   el.innerHTML = `
     <div class="brand">
@@ -185,6 +189,7 @@ async function loadCurrency() {
     window.__APP_TZ__ = data.businessTimezone || 'Asia/Dubai';
     window.__APP_CATEGORIES__ = data.productCategories || [];
     window.__APP_STAGES__ = data.stages || [];
+    window.__APP_EXPENSE_CATEGORIES__ = data.expenseCategories || [];
     window.__APP_DOC_EXTENSIONS__ = data.documentExtensions || [];
     window.__APP_DOC_PREVIEW_TYPES__ = data.documentPreviewTypes || [];
     window.__APP_DOC_MAX_BYTES__ = data.maxDealDocumentBytes || 0;

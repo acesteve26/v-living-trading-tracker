@@ -12,13 +12,16 @@
   <div class="page">
     <div class="page-header">
       <h1>Users</h1>
-      <button class="btn" id="btnAddUser">+ Add User</button>
+      <div class="page-actions">
+        <button class="btn secondary hidden" id="btnSystemLog">System Log</button>
+        <button class="btn" id="btnAddUser">+ Add User</button>
+      </div>
     </div>
 
     <div class="card">
       <div class="table-scroll">
       <table>
-        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Password</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last Seen</th><th>Password</th><th></th></tr></thead>
         <tbody id="usersBody"></tbody>
       </table>
       </div>
@@ -42,6 +45,36 @@
         </div>
       </form>
     </div>
+  </div>
+
+  <!-- Slides in from the right rather than sitting over the page as a box:
+       the log is a long list being scanned, and the table stays visible
+       behind it so it is obvious whose activity is being read. -->
+  <div class="drawer-backdrop hidden" id="activityDrawer">
+    <aside class="drawer" role="dialog" aria-labelledby="activityTitle">
+      <div class="drawer-head">
+        <div>
+          <h2 id="activityTitle">Activity</h2>
+          <p class="drawer-sub" id="activitySub"></p>
+        </div>
+        <button type="button" class="btn secondary small" id="closeActivity">Close</button>
+      </div>
+
+      <div class="activity-summary" id="activitySummary"></div>
+
+      <div class="drawer-toolbar">
+        <select id="activityDays">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+          <option value="365">Last 12 months</option>
+        </select>
+        <span class="muted-note" id="activityCount"></span>
+      </div>
+
+      <ol class="activity-list drawer-list" id="activityEvents"></ol>
+      <p class="muted-note" id="activityFootnote"></p>
+    </aside>
   </div>
 
   <div class="modal-backdrop hidden" id="userModal">

@@ -104,6 +104,21 @@
         </table></div>
       </section>
 
+      <!-- Overheads for the same period, reported on their own. They are not
+           deal costs and are deliberately not netted off gross profit. -->
+      <section class="report-section page-break">
+        <h2 class="report-h2">Expenses <span class="report-note">overheads for the period, separate from deal cost</span></h2>
+        <div class="stat-row" id="expenseRow"></div>
+        <div class="table-scroll"><table class="report-table">
+          <thead><tr><th>Category</th><th class="num">Count</th><th class="num">Total</th><th class="num">Share</th></tr></thead>
+          <tbody id="expenseCategoryBody"></tbody>
+        </table></div>
+        <div class="table-scroll" style="margin-top:14px;"><table class="report-table">
+          <thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Added by</th><th class="num">Amount</th></tr></thead>
+          <tbody id="expenseBody"></tbody>
+        </table></div>
+      </section>
+
       <section class="report-section">
         <h2 class="report-h2">Largest open deals</h2>
         <div class="table-scroll"><table class="report-table">

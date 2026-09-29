@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Expenses — V Living Trading Tracker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="topbar" id="topbar"></header>
+
+  <div class="page">
+    <div class="page-header">
+      <h1>Expenses</h1>
+      <button class="btn hidden" id="btnAddExpense">+ Add Expense</button>
+    </div>
+
+    <div id="rangeLabel" class="meta-line"></div>
+
+    <div class="kpi-grid expense-kpis">
+      <div class="kpi-card won">
+        <div class="label">Total for Period</div>
+        <div class="value" id="kpiTotal">—</div>
+        <div class="sub" id="kpiCount">—</div>
+      </div>
+      <div class="kpi-card weighted">
+        <div class="label">Largest Category</div>
+        <div class="value" id="kpiTopCategory">—</div>
+        <div class="sub" id="kpiTopCategorySub">—</div>
+      </div>
+      <div class="kpi-card">
+        <div class="label">Monthly Average</div>
+        <div class="value" id="kpiMonthly">—</div>
+        <div class="sub" id="kpiMonthlySub">—</div>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <select id="rangeSelect"></select>
+      <div class="hidden" id="customRangeWrap" style="display:contents;">
+        <input type="date" id="fromDate" />
+        <input type="date" id="toDate" />
+        <button class="btn secondary small" id="applyCustom">Apply</button>
+      </div>
+      <select id="filterCategory">
+        <option value="">All categories</option>
+      </select>
+      <div class="spacer"></div>
+      <span id="resultCount" style="color:var(--text-muted); font-size:13px;"></span>
+    </div>
+
+    <div class="card">
+      <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th><th>Description</th><th>Category</th>
+            <th class="num" id="amountHeader">Amount</th><th>Added By</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="expensesBody"></tbody>
+        <tfoot>
+          <tr class="total-row">
+            <td colspan="3">Total</td>
+            <td class="num" id="footTotal">—</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
+      </table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h3>By Category</h3>
+      <div class="table-scroll">
+      <table>
+        <thead><tr><th>Category</th><th class="num">Count</th><th class="num">Total</th><th class="num">Share</th></tr></thead>
+        <tbody id="categoryBody"></tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="expenseModal">
+    <div class="modal">
+      <h2 id="expenseModalTitle">Add Expense</h2>
+      <form id="expenseForm">
+        <input type="hidden" id="expenseId" />
+        <div class="form-grid">
+          <div class="field">
+            <label>Date *</label>
+            <input type="date" id="f_expense_date" required />
+          </div>
+          <div class="field">
+            <label>Category *</label>
+            <select id="f_category"></select>
+          </div>
+          <div class="field full">
+            <label>Description *</label>
+            <input id="f_description" required placeholder="e.g. Warehouse rent — September" />
+          </div>
+          <div class="field">
+            <label id="amountLabel">Amount *</label>
+            <input type="number" min="0" step="0.01" id="f_amount" required />
+          </div>
+        </div>
+        <div class="error-text" id="expenseErr"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn danger hidden" id="btnDeleteExpense">Delete</button>
+          <div class="spacer"></div>
+          <button type="button" class="btn secondary" id="btnCancelExpense">Cancel</button>
+          <button type="submit" class="btn">Save Expense</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="accountModal">
+    <div class="modal">
+      <h2>My Account</h2>
+      <form id="pwForm">
+        <div class="field"><label>Current password</label><input type="password" id="curPw" required /></div>
+        <div class="field"><label>New password</label><input type="password" id="newPw" required minlength="6" /></div>
+        <div class="error-text" id="pwErr"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn secondary" id="closeAccount">Close</button>
+          <button type="submit" class="btn">Update Password</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/expenses.js"></script>
+</body>
+</html>

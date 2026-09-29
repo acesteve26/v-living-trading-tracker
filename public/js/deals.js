@@ -46,6 +46,17 @@ async function loadUsersForOwnerSelect() {
     usersList.map((u) => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
 }
 
+// In progress by default: the working list is the one people open this page
+// for, and a year of won deals underneath it is noise most of the time.
+let dealStatus = 'open';
+
+function setDealStatus(status) {
+  dealStatus = status;
+  document.querySelectorAll('#statusFilter .segment').forEach((b) =>
+    b.classList.toggle('is-active', b.dataset.status === status)
+  );
+}
+
 function currentFilters() {
   const params = new URLSearchParams();
   const search = document.getElementById('searchBox').value.trim();
@@ -59,8 +70,17 @@ function currentFilters() {
   if (owner) params.set('ownerId', owner);
   if (view === 'archived') params.set('archived', 'true');
   else if (view) params.set('view', view);
+  // The stage dropdown is the finer version of the same choice, so it wins and
+  // the split above is left out rather than the two contradicting each other
+  // into an empty table.
+  if (dealStatus !== 'all' && !stage) params.set('status', dealStatus);
 
+  // The split is a starting position rather than a filter someone set, so it
+  // does not by itself light up the Clear button.
+  params.delete('status');
   document.getElementById('btnClearFilters').classList.toggle('hidden', ![...params.keys()].length);
+  if (dealStatus !== 'all' && !stage) params.set('status', dealStatus);
+
   return params.toString();
 }
 
@@ -107,6 +127,21 @@ async function loadDeals() {
 
 // The lost reason only makes sense on a lost deal, so it appears with the stage
 // rather than sitting empty the rest of the time.
+// The stage the deal was on when the form opened, so moving *into* Won can be
+// told apart from editing something that was already won.
+let openDealStage = null;
+
+// Marking a deal won settles both of its dates: it closed today, and the
+// expected close is no longer a forecast. Filled in here as well as on the
+// server so it is visible in the form before saving - and still editable, for
+// a deal being logged days after it actually closed.
+function applyWonDates(stage) {
+  if (stage !== 'Won' || openDealStage === 'Won') return;
+  const wonLost = document.getElementById('f_won_lost_date');
+  if (!wonLost.value) wonLost.value = businessToday();
+  document.getElementById('f_expected_close_date').value = wonLost.value;
+}
+
 function syncStageFields() {
   const stage = document.getElementById('f_stage').value;
   document.getElementById('lostReasonWrap').classList.toggle('hidden', stage !== 'Lost');
@@ -519,6 +554,7 @@ function resetDealForm() {
   document.getElementById('btnArchiveDeal').classList.add('hidden');
   document.getElementById('btnRestoreDeal').classList.add('hidden');
   openDealIsArchived = false;
+  openDealStage = null;
   document.getElementById('dealErr').textContent = '';
   document.getElementById('f_owner_id').value = currentUser.id;
   document.getElementById('f_stage').value = 'Lead';
@@ -555,6 +591,7 @@ async function openDealModal(id) {
     document.getElementById('f_next_action').value = deal.next_action || '';
     document.getElementById('f_next_action_date').value = deal.next_action_date || '';
     setLostReason(deal.lost_reason || null);
+    openDealStage = deal.stage;
     openDealIsArchived = Boolean(deal.archived_at);
     document.getElementById('btnArchiveDeal').classList.toggle('hidden', openDealIsArchived);
     document.getElementById('btnRestoreDeal').classList.toggle('hidden', !openDealIsArchived);
@@ -632,6 +669,18 @@ function collectDealForm() {
   document.getElementById('btnAddDeal').addEventListener('click', () => openDealModal(null));
   document.getElementById('btnCancelDeal').addEventListener('click', closeDealModal);
   document.getElementById('searchBox').addEventListener('input', debounce(loadDeals, 250));
+  document.querySelectorAll('#statusFilter .segment').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      setDealStatus(btn.dataset.status);
+      loadDeals();
+    })
+  );
+
+  // Choosing an explicit stage is a narrower answer to the same question, so
+  // the split steps aside rather than fighting it.
+  document.getElementById('filterStage').addEventListener('change', (e) => {
+    if (e.target.value) setDealStatus('all');
+  });
   document.getElementById('filterStage').addEventListener('change', loadDeals);
   document.getElementById('filterCategory').addEventListener('change', loadDeals);
   document.getElementById('filterOwner').addEventListener('change', loadDeals);
@@ -649,6 +698,7 @@ function collectDealForm() {
   document.getElementById('f_stage').addEventListener('change', (e) => {
     const suggested = stageProbabilities[e.target.value];
     if (suggested !== undefined) document.getElementById('f_probability').value = suggested;
+    applyWonDates(e.target.value);
     syncStageFields();
   });
 

@@ -7,6 +7,8 @@ const {
   STAGES,
   ROLES,
   HISTORY_ACTIONS,
+  ACTIVITY_ACTIONS,
+  EXPENSE_CATEGORIES,
   DEFAULT_PROBABILITIES,
   sqlList
 } = require('./constants');
@@ -147,6 +149,46 @@ CREATE TABLE IF NOT EXISTS deal_history (
 CREATE INDEX IF NOT EXISTS deal_history_deal_idx ON deal_history (deal_id, changed_at DESC);
 CREATE INDEX IF NOT EXISTS deal_history_when_idx ON deal_history (changed_at DESC);
 
+-- What the business spends, kept deliberately apart from deals. A deal's cost
+-- is what that deal's goods cost and it drives gross profit; these are the
+-- overheads that sit alongside the pipeline - rent, salaries, freight. Mixing
+-- them into deal margin would make every deal look unprofitable.
+CREATE TABLE IF NOT EXISTS expenses (
+  id SERIAL PRIMARY KEY,
+  expense_date DATE NOT NULL,
+  description TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'Other',
+  amount NUMERIC(14,2) NOT NULL CHECK (amount >= 0),
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_by_name TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS expenses_date_idx ON expenses (expense_date DESC);
+
+-- Signing in, admin changes to accounts, reports being run: everything worth
+-- recording that isn't a change to a deal. Deal changes are not duplicated
+-- here - deal_history already holds them, with their before and after - and
+-- the two are merged when the log is read.
+--
+-- actor_name is kept on the row so the trail survives the account being
+-- deleted, the same reasoning as deal_history. actor_id is null for a failed
+-- sign-in against an email that belongs to nobody, and actor_name then holds
+-- what was typed.
+CREATE TABLE IF NOT EXISTS activity_log (
+  id SERIAL PRIMARY KEY,
+  actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  actor_name TEXT,
+  action TEXT NOT NULL,
+  subject_name TEXT,
+  detail TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS activity_log_actor_idx ON activity_log (actor_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS activity_log_when_idx ON activity_log (created_at DESC);
+
 -- Quotes, purchase orders, invoices and spec sheets attached to a deal. The
 -- file contents live in Postgres rather than on a disk so that a document and
 -- the deal it belongs to are captured by the same backup and restored together
@@ -177,6 +219,20 @@ CREATE INDEX IF NOT EXISTS deal_documents_deal_idx ON deal_documents (deal_id, u
 -- EXISTS won't touch an existing table, so new columns go here. These are
 -- idempotent, so they run harmlessly on every boot.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Touched at most once a minute per person, so "last seen" is a cheap answer
+-- to "is anyone actually using this" without a write on every request.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
+
+-- Rebuilt from the shared list each boot, like the other vocabularies, so the
+-- set of recordable actions can grow without a hand-written migration.
+ALTER TABLE activity_log DROP CONSTRAINT IF EXISTS activity_log_action_check;
+ALTER TABLE activity_log ADD CONSTRAINT activity_log_action_check
+  CHECK (action IN (${sqlList(ACTIVITY_ACTIONS)}));
+
+ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_category_check;
+ALTER TABLE expenses ADD CONSTRAINT expenses_category_check
+  CHECK (category IN (${sqlList(EXPENSE_CATEGORIES)}));
 
 -- Roles grew from admin/sales to four. The inline CHECK has to be replaced
 -- rather than altered; dropping first keeps this safe to run repeatedly.

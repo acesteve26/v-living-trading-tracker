@@ -12,7 +12,10 @@ const {
   OPEN_STAGES,
   ROLES,
   CAN_EDIT_DEALS: EDIT_DEAL_ROLES,
+  CAN_EDIT_EXPENSES: EDIT_EXPENSE_ROLES,
+  EXPENSE_CATEGORIES,
   CAN_MANAGE_USERS: MANAGE_USER_ROLES,
+  CAN_VIEW_ACTIVITY: VIEW_ACTIVITY_ROLES,
   DOCUMENT_TYPES,
   PREVIEWABLE_TYPES
 } = require('./constants');
@@ -149,24 +152,27 @@ function requireAuth(req, res, next) {
 // reports; these two capabilities are the only things that differ.
 const CAN_EDIT_DEALS = new Set(EDIT_DEAL_ROLES);
 const CAN_MANAGE_USERS = new Set(MANAGE_USER_ROLES);
+const CAN_VIEW_ACTIVITY = new Set(VIEW_ACTIVITY_ROLES);
+const CAN_EDIT_EXPENSES = new Set(EDIT_EXPENSE_ROLES);
 
 function normaliseRole(role, fallback = 'sales') {
   return ROLES.includes(role) ? role : fallback;
 }
 
-function requireAdmin(req, res, next) {
-  if (!req.session.user || !CAN_MANAGE_USERS.has(req.session.user.role)) {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
+// Signed out is a 401 - "who are you?" - and the browser uses exactly that to
+// send someone back to the login page. Signed in with the wrong role is a 403,
+// "not you". Collapsing the two into one 403 left a signed-out request looking
+// like a permissions problem, which is both wrong and unhelpful.
+const requireRole = (roles, message) => (req, res, next) => {
+  if (!req.session.user) return res.status(401).json({ error: 'Not logged in' });
+  if (!roles.has(req.session.user.role)) return res.status(403).json({ error: message });
   next();
-}
+};
 
-function requireDealEditor(req, res, next) {
-  if (!req.session.user || !CAN_EDIT_DEALS.has(req.session.user.role)) {
-    return res.status(403).json({ error: 'Your role has read-only access to deals' });
-  }
-  next();
-}
+const requireAdmin = requireRole(CAN_MANAGE_USERS, 'Admin access required');
+const requireActivityViewer = requireRole(CAN_VIEW_ACTIVITY, 'You do not have access to the activity log');
+const requireDealEditor = requireRole(CAN_EDIT_DEALS, 'Your role has read-only access to deals');
+const requireExpenseEditor = requireRole(CAN_EDIT_EXPENSES, 'Your role has read-only access to expenses');
 
 function publicUser(u) {
   return {
@@ -177,9 +183,32 @@ function publicUser(u) {
     active: u.active,
     mustChangePassword: u.must_change_password === true,
     canEditDeals: CAN_EDIT_DEALS.has(u.role),
-    canManageUsers: CAN_MANAGE_USERS.has(u.role)
+    canEditExpenses: CAN_EDIT_EXPENSES.has(u.role),
+    canManageUsers: CAN_MANAGE_USERS.has(u.role),
+    canViewActivity: CAN_VIEW_ACTIVITY.has(u.role)
   };
 }
+
+// ---------- activity log ----------
+// Recording must never be the reason a request fails: if the log write breaks,
+// the sign-in or the edit it was describing still went through, and losing a
+// log line is the lesser of the two problems. So it is logged and swallowed.
+async function recordActivity({ actorId = null, actorName = null, action, subjectName = null, detail = null }) {
+  try {
+    await db.query(
+      `INSERT INTO activity_log (actor_id, actor_name, action, subject_name, detail)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [actorId, actorName, action, subjectName, detail]
+    );
+  } catch (e) {
+    console.error('Could not record activity:', action, '-', e.message);
+  }
+}
+
+const actorFrom = (req) => ({
+  actorId: req.session.user.id,
+  actorName: req.session.user.name
+});
 
 // While a temporary password is outstanding, the account can do nothing except
 // look at itself, change the password, or log out. Enforced here rather than
@@ -237,6 +266,16 @@ app.use(
     }
 
     req.session.user = publicUser(fresh);
+
+    // "Last seen" without a write on every request: a minute's resolution is
+    // plenty for answering whether someone has been in this week.
+    const seen = fresh.last_seen_at ? new Date(fresh.last_seen_at).getTime() : 0;
+    if (Date.now() - seen > 60_000) {
+      db.query('UPDATE users SET last_seen_at = NOW() WHERE id = $1', [fresh.id]).catch((e) =>
+        console.error('Could not update last seen:', e.message)
+      );
+    }
+
     next();
   })
 );
@@ -252,10 +291,20 @@ app.post(
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
 
-    const user = await db.one('SELECT * FROM users WHERE email = $1 AND active = TRUE', [
-      email.toLowerCase().trim()
-    ]);
+    const attempted = email.toLowerCase().trim();
+    const user = await db.one('SELECT * FROM users WHERE email = $1 AND active = TRUE', [attempted]);
     if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+      // Recorded against the account when the email is a real one, so a run of
+      // failures shows up in that person's log; otherwise the typed email is
+      // kept as the name. The reply is the same either way, so this reveals
+      // nothing to whoever is trying.
+      const known = user || (await db.one('SELECT id, name FROM users WHERE email = $1', [attempted]));
+      await recordActivity({
+        actorId: known ? known.id : null,
+        actorName: known ? known.name : attempted,
+        action: 'sign_in_failed',
+        detail: user ? 'Wrong password' : 'No active account for that email'
+      });
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
@@ -265,11 +314,16 @@ app.post(
     req.session.user = publicUser(user);
     await saveSession(req);
 
+    await recordActivity({ actorId: user.id, actorName: user.name, action: 'signed_in' });
+
     res.json({ user: req.session.user });
   })
 );
 
 app.post('/api/logout', (req, res) => {
+  // read before the session is destroyed, and recorded without waiting
+  const who = req.session.user;
+  if (who) recordActivity({ actorId: who.id, actorName: who.name, action: 'signed_out' });
   req.session.destroy(() => res.json({ ok: true }));
 });
 
@@ -315,6 +369,12 @@ app.post(
     const ended = await revokeSessionsForUser(user.id, req.sessionID);
 
     req.session.user.mustChangePassword = false;
+    await recordActivity({
+      actorId: user.id,
+      actorName: user.name,
+      action: 'password_changed',
+      detail: ended ? `${ended} other session${ended === 1 ? '' : 's'} ended` : null
+    });
     res.json({ ok: true, otherSessionsEnded: ended });
   })
 );
@@ -325,7 +385,8 @@ app.get(
   requireAuth,
   route(async (req, res) => {
     const users = await db.all(
-      'SELECT id, name, email, role, active, must_change_password, created_at FROM users ORDER BY name'
+      `SELECT id, name, email, role, active, must_change_password, created_at, last_seen_at
+       FROM users ORDER BY name`
     );
     res.json({ users });
   })
@@ -345,6 +406,12 @@ app.post(
          VALUES ($1, $2, $3, $4, TRUE) RETURNING id`,
         [name.trim(), email.toLowerCase().trim(), bcrypt.hashSync(password, 10), normaliseRole(role)]
       );
+      await recordActivity({
+        ...actorFrom(req),
+        action: 'user_created',
+        subjectName: name.trim(),
+        detail: `Role: ${normaliseRole(role)}`
+      });
       res.json({ id: row.id });
     } catch (e) {
       if (e.code === '23505') return res.status(409).json({ error: 'A user with that email already exists' });
@@ -420,6 +487,27 @@ app.patch(
       req.session.user = publicUser(updated);
     }
 
+    // Who changed whose account, and to what. Deactivations, reactivations and
+    // password resets are called out by name rather than buried in a generic
+    // "updated", because those are the ones worth spotting in a list.
+    const subjectName = (name || user.name).trim();
+    if (passwordWasReset) {
+      await recordActivity({ ...actorFrom(req), action: 'user_password_reset', subjectName });
+    }
+    if (wasDeactivated) {
+      await recordActivity({ ...actorFrom(req), action: 'user_deactivated', subjectName });
+    } else if (!user.active && nextActive) {
+      await recordActivity({ ...actorFrom(req), action: 'user_reactivated', subjectName });
+    }
+
+    const edits = [];
+    if (name && name.trim() !== user.name) edits.push(`name: ${user.name} → ${name.trim()}`);
+    if (email && email.toLowerCase().trim() !== user.email) edits.push(`email: ${user.email} → ${email.toLowerCase().trim()}`);
+    if (nextRole !== user.role) edits.push(`role: ${user.role} → ${nextRole}`);
+    if (edits.length) {
+      await recordActivity({ ...actorFrom(req), action: 'user_updated', subjectName, detail: edits.join(', ') });
+    }
+
     res.json({ ok: true, sessionsEnded });
   })
 );
@@ -431,11 +519,244 @@ app.delete(
     if (Number(req.params.id) === req.session.user.id) {
       return res.status(400).json({ error: "You can't delete your own account" });
     }
+    const doomed = await db.one('SELECT name FROM users WHERE id = $1', [req.params.id]);
     // deals keep their history; the foreign key nulls the owner automatically
     await db.query('DELETE FROM users WHERE id = $1', [req.params.id]);
     // and any session they still had open stops working immediately
     await revokeSessionsForUser(req.params.id);
+    // Recorded after the delete: the log row's actor_id is nulled by the same
+    // foreign key, which is why the names are kept on the row.
+    await recordActivity({
+      ...actorFrom(req),
+      action: 'user_deleted',
+      subjectName: doomed ? doomed.name : `User ${req.params.id}`
+    });
     res.json({ ok: true });
+  })
+);
+
+// ---------- expenses ----------
+// Overheads, not deal costs. Everyone signed in can read them; only the
+// finance roles can change them.
+function validateExpenseBody(body) {
+  const { expense_date, description, category, amount } = body || {};
+
+  if (!description || !String(description).trim()) return 'A description is required';
+  if (!expense_date || !isValidDate(expense_date)) return 'A valid date is required';
+  if (category !== undefined && category !== null && !EXPENSE_CATEGORIES.includes(category)) {
+    return `Category must be one of: ${EXPENSE_CATEGORIES.join(', ')}`;
+  }
+
+  const value = Number(amount);
+  if (amount === undefined || amount === null || amount === '' || isNaN(value)) return 'An amount is required';
+  if (value < 0) return 'An amount cannot be negative';
+  if (value >= MAX_MONEY) return 'That amount is larger than this system can store';
+
+  return null;
+}
+
+const expenseFields = (body) => [
+  body.expense_date,
+  String(body.description).trim(),
+  body.category || 'Other',
+  Number(body.amount)
+];
+
+app.get(
+  '/api/expenses',
+  requireAuth,
+  route(async (req, res) => {
+    const { range, from: fromQ, to: toQ, category } = req.query;
+    const period = computeRange(range || 'this_month', fromQ, toQ);
+
+    const params = [period.from, period.to];
+    let filter = 'WHERE expense_date BETWEEN $1 AND $2';
+    if (category) {
+      params.push(category);
+      filter += ` AND category = $${params.length}`;
+    }
+
+    const expenses = await db.all(
+      `SELECT id, expense_date, description, category, amount, created_by_name, created_at, updated_at
+       FROM expenses ${filter}
+       ORDER BY expense_date DESC, id DESC`,
+      params
+    );
+
+    // Every category is reported, including the ones with nothing in them, so
+    // a gap reads as "nothing spent" rather than a missing row.
+    const byCategory = {};
+    EXPENSE_CATEGORIES.forEach((c) => (byCategory[c] = { count: 0, total: 0 }));
+    let total = 0;
+    for (const e of expenses) {
+      total += Number(e.amount);
+      byCategory[e.category].count += 1;
+      byCategory[e.category].total += Number(e.amount);
+    }
+
+    res.json({ expenses, total, count: expenses.length, byCategory, range: period });
+  })
+);
+
+app.post(
+  '/api/expenses',
+  requireExpenseEditor,
+  route(async (req, res) => {
+    const problem = validateExpenseBody(req.body);
+    if (problem) return res.status(400).json({ error: problem });
+
+    const expense = await db.one(
+      `INSERT INTO expenses (expense_date, description, category, amount, created_by, created_by_name)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING id, expense_date, description, category, amount, created_by_name, created_at, updated_at`,
+      [...expenseFields(req.body), req.session.user.id, req.session.user.name]
+    );
+
+    await recordActivity({
+      ...actorFrom(req),
+      action: 'expense_created',
+      subjectName: expense.description,
+      detail: `${expense.category} · ${expense.amount} on ${expense.expense_date}`
+    });
+
+    res.json({ expense });
+  })
+);
+
+app.put(
+  '/api/expenses/:id',
+  requireExpenseEditor,
+  route(async (req, res) => {
+    const existing = await db.one('SELECT * FROM expenses WHERE id = $1', [req.params.id]);
+    if (!existing) return res.status(404).json({ error: 'Expense not found' });
+
+    const problem = validateExpenseBody(req.body);
+    if (problem) return res.status(400).json({ error: problem });
+
+    const expense = await db.one(
+      `UPDATE expenses
+       SET expense_date = $1, description = $2, category = $3, amount = $4, updated_at = NOW()
+       WHERE id = $5
+       RETURNING id, expense_date, description, category, amount, created_by_name, created_at, updated_at`,
+      [...expenseFields(req.body), req.params.id]
+    );
+
+    // Only what actually changed, so an edit that touched nothing says nothing.
+    const changes = [];
+    if (existing.expense_date !== expense.expense_date) changes.push(`date: ${existing.expense_date} → ${expense.expense_date}`);
+    if (existing.description !== expense.description) changes.push(`description: ${existing.description} → ${expense.description}`);
+    if (existing.category !== expense.category) changes.push(`category: ${existing.category} → ${expense.category}`);
+    if (Number(existing.amount) !== Number(expense.amount)) changes.push(`amount: ${existing.amount} → ${expense.amount}`);
+
+    if (changes.length) {
+      await recordActivity({
+        ...actorFrom(req),
+        action: 'expense_updated',
+        subjectName: expense.description,
+        detail: changes.join(', ')
+      });
+    }
+
+    res.json({ expense });
+  })
+);
+
+app.delete(
+  '/api/expenses/:id',
+  requireExpenseEditor,
+  route(async (req, res) => {
+    const existing = await db.one('SELECT * FROM expenses WHERE id = $1', [req.params.id]);
+    if (!existing) return res.status(404).json({ error: 'Expense not found' });
+
+    await db.query('DELETE FROM expenses WHERE id = $1', [req.params.id]);
+    await recordActivity({
+      ...actorFrom(req),
+      action: 'expense_deleted',
+      subjectName: existing.description,
+      detail: `${existing.category} · ${existing.amount} on ${existing.expense_date}`
+    });
+
+    res.json({ ok: true });
+  })
+);
+
+// ---------- activity ----------
+// One timeline from two tables. deal_history holds the field-level record of
+// deal changes and activity_log holds everything else; neither is a subset of
+// the other, so they are unioned into a common shape here rather than every
+// event being written twice and left to drift.
+const ACTIVITY_STREAM = `
+  SELECT 'deal' AS source, changed_by AS actor_id, changed_by_name AS actor_name,
+         action, deal_name AS subject, field, old_value, new_value,
+         NULL::text AS detail, changed_at AS at
+  FROM deal_history
+  UNION ALL
+  SELECT 'system', actor_id, actor_name,
+         action, subject_name, NULL, NULL, NULL,
+         detail, created_at
+  FROM activity_log
+`;
+
+app.get(
+  '/api/activity',
+  requireActivityViewer,
+  route(async (req, res) => {
+    const { userId } = req.query;
+    const days = Math.min(Number(req.query.days) || 30, 365);
+    const limit = Math.min(Number(req.query.limit) || 200, 500);
+
+    const params = [days];
+    let scope = '';
+    if (userId) {
+      params.push(Number(userId));
+      scope = ` AND actor_id = $${params.length}`;
+    }
+
+    const events = await db.all(
+      `SELECT * FROM (${ACTIVITY_STREAM}) a
+       WHERE at >= NOW() - ($1 || ' days')::interval${scope}
+       ORDER BY at DESC
+       LIMIT ${limit}`,
+      params
+    );
+
+    // Counted over the full 30 days regardless of the window being listed, so
+    // the two headline numbers never depend on how far the list is scrolled.
+    const summaryParams = [];
+    let summaryScope = '';
+    if (userId) {
+      summaryParams.push(Number(userId));
+      summaryScope = ` WHERE actor_id = $${summaryParams.length}`;
+    }
+    const summary = await db.all(
+      `SELECT action,
+              COUNT(*) FILTER (WHERE at >= NOW() - INTERVAL '7 days')::int AS week,
+              COUNT(*) FILTER (WHERE at >= NOW() - INTERVAL '30 days')::int AS month
+       FROM (${ACTIVITY_STREAM}) a${summaryScope}
+       GROUP BY action
+       HAVING COUNT(*) FILTER (WHERE at >= NOW() - INTERVAL '30 days') > 0
+       ORDER BY action`,
+      summaryParams
+    );
+
+    let user = null;
+    if (userId) {
+      user = await db.one(
+        'SELECT id, name, email, role, active, last_seen_at, created_at FROM users WHERE id = $1',
+        [Number(userId)]
+      );
+      if (!user) return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+      user,
+      events,
+      summary,
+      days,
+      // named so the panel can say what it is showing rather than implying
+      // the log reaches further back than the day it started recording
+      recordingSince: (await db.one(`SELECT MIN(at) AS since FROM (${ACTIVITY_STREAM}) a`)).since
+    });
   })
 );
 
@@ -455,6 +776,7 @@ app.get(
       stages: STAGES,
       // so the upload area can name what it accepts, and refuse the obvious
       // cases before pushing a file over the wire
+      expenseCategories: EXPENSE_CATEGORIES,
       documentExtensions: Object.keys(DOCUMENT_TYPES),
       documentPreviewTypes: PREVIEWABLE_TYPES,
       maxDealDocumentBytes: config.maxDealDocumentBytes
@@ -490,7 +812,7 @@ app.get(
   '/api/deals',
   requireAuth,
   route(async (req, res) => {
-    const { stage, category, search, ownerId, view, archived } = req.query;
+    const { stage, category, search, ownerId, view, archived, status } = req.query;
     let sql = `SELECT d.*, u.name AS owner_name
                FROM deals d LEFT JOIN users u ON u.id = d.owner_id
                WHERE 1=1`;
@@ -498,6 +820,17 @@ app.get(
 
     // Archived deals stay out of the way unless asked for by name.
     sql += archived === 'true' ? ' AND d.archived_at IS NOT NULL' : ' AND d.archived_at IS NULL';
+
+    // The three-way split above the table. "In progress" means the stages the
+    // pipeline figures already count as open, so it leaves out Lost as well as
+    // Won - a lost deal is not in progress, and this keeps the table agreeing
+    // with the dashboard.
+    if (status === 'open') {
+      params.push(OPEN_STAGES);
+      sql += ` AND d.stage = ANY($${params.length})`;
+    } else if (status === 'won') {
+      sql += ` AND d.stage = 'Won'`;
+    }
 
     if (stage) {
       params.push(stage);
@@ -745,6 +1078,17 @@ app.put(
     const wonLostDate = ['Won', 'Lost'].includes(b.stage)
       ? b.won_lost_date || existing.won_lost_date || businessToday()
       : null;
+
+    // The moment a deal is marked won, its expected close date stops being a
+    // forecast - it happened, and the date it happened is known. Left alone it
+    // would keep pointing at some future month and drag the deal into the
+    // wrong period wherever expected close is read. Only on the move into Won,
+    // so editing a deal that is already won never re-stamps it; and it follows
+    // the close date rather than today, so a deal logged after the fact lands
+    // on the day it was actually won.
+    const justWon = b.stage === 'Won' && existing.stage !== 'Won';
+    const expectedClose = justWon ? wonLostDate : b.expected_close_date || null;
+
     const probability =
       b.probability !== undefined && b.probability !== '' ? Number(b.probability) : db.defaultProbabilities[b.stage];
 
@@ -768,7 +1112,7 @@ app.put(
           parseCost(b.cost),
           b.stage,
           probability,
-          b.expected_close_date || null,
+          expectedClose,
           wonLostDate,
           b.owner_id || existing.owner_id,
           b.notes || null,
@@ -1154,6 +1498,24 @@ function computeRange(range, fromQ, toQ) {
     return { from: fmt(from), to: fmt(now), label: `Year to Date ${y}` };
   }
 
+  // Quarters are counted from the business's today, so "this quarter" means
+  // the one Dubai is currently in, not the server's.
+  if (range === 'this_quarter') {
+    const q = Math.floor(m / 3);
+    const from = new Date(y, q * 3, 1);
+    const to = new Date(y, q * 3 + 3, 0);
+    return { from: fmt(from), to: fmt(to), label: `Q${q + 1} ${y}` };
+  }
+
+  const quarterMatch = /^quarter:(\d{4})-([1-4])$/.exec(range);
+  if (quarterMatch) {
+    const yr = Number(quarterMatch[1]);
+    const q = Number(quarterMatch[2]) - 1;
+    const from = new Date(yr, q * 3, 1);
+    const to = new Date(yr, q * 3 + 3, 0);
+    return { from: fmt(from), to: fmt(to), label: `Q${q + 1} ${yr}` };
+  }
+
   const yearMatch = /^year:(\d{4})$/.exec(range);
   if (yearMatch) {
     const yr = Number(yearMatch[1]);
@@ -1371,6 +1733,10 @@ app.get(
     const { from, to } = req.query;
     if (!from || !to) return res.status(400).json({ error: 'from and to dates are required' });
 
+    // Without this, management and accounts - who only view and run reports -
+    // would show no activity at all, and the log would misrepresent them.
+    await recordActivity({ ...actorFrom(req), action: 'report_run', detail: `${from} to ${to}` });
+
     const dealFields = `d.id, d.customer_name, d.product_category, d.value, d.cost, d.stage,
                         d.probability, d.expected_close_date, d.won_lost_date, d.created_at,
                         d.next_action, d.next_action_date, u.name AS owner_name, d.owner_id`;
@@ -1402,6 +1768,27 @@ app.get(
         [OPEN_STAGES]
       )
     ]);
+
+    // Overheads over the same dates, summarised the same way the Expenses tab
+    // does it so the two never disagree.
+    const expenseRows = await db.all(
+      `SELECT id, expense_date, description, category, amount, created_by_name
+       FROM expenses WHERE expense_date BETWEEN $1 AND $2
+       ORDER BY expense_date DESC, id DESC`,
+      [from, to]
+    );
+    const expenseByCategory = {};
+    EXPENSE_CATEGORIES.forEach((c) => (expenseByCategory[c] = { count: 0, total: 0 }));
+    for (const e of expenseRows) {
+      expenseByCategory[e.category].count += 1;
+      expenseByCategory[e.category].total += Number(e.amount);
+    }
+    const expenses = {
+      items: expenseRows,
+      total: expenseRows.reduce((s, e) => s + Number(e.amount), 0),
+      count: expenseRows.length,
+      byCategory: expenseByCategory
+    };
 
     const sum = (rows, field) => rows.reduce((s, r) => s + (Number(r[field]) || 0), 0);
     const gpOf = (rows) => {
@@ -1489,7 +1876,11 @@ app.get(
       openDeals: openDeals.slice(0, 20),
       bySalesperson,
       byStage,
-      byCategory
+      byCategory,
+      // Overheads for the same dates. Reported beside the deal figures, never
+      // folded into them: these are not deal costs and netting them off gross
+      // profit would misstate how each deal actually performed.
+      expenses
     });
   })
 );

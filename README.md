@@ -15,6 +15,8 @@ Brand palette and typography carried over from the NVF brand guidelines — see 
 - Charts: monthly pipeline vs. won trend, pipeline by stage, pipeline by product category
 - Tables: top open deals, recently won deals
 - Login with four roles: **Admin** (manages users & settings), **Sales** (manages deals), and **Management** / **Accounts**, which can view everything and run reports but not change deals
+- **Expenses** — the overheads that sit alongside the pipeline (rent, salaries, freight, duty…), with period filters for month, quarter, year to date and full year, and a breakdown by category. Everyone can see them; admin and accounts can add and edit them
+- **Activity log** — a per-person and whole-system history: sign-ins and failed attempts, deals created and edited, documents attached, reports run, and every admin change to an account. Opens from the Users tab; readable by admin and management only
 
 ## 1. Prerequisites — install Node.js
 
@@ -172,6 +174,9 @@ The old SQLite file in `data/` is kept only so [scripts/migrate-from-sqlite.js](
 - Single light theme only, matching the brand's warm/light identity — no dark mode, to avoid rendering the brand in unapproved tones.
 - Login sessions are stored in Postgres (`user_sessions` table), so they survive restarts and deploys.
 - Deal history is recorded: every create, field-level change and delete, with who and when, in the `deal_history` table and exposed at `/api/deals/:id/history`. It only describes changes made after that feature shipped - history cannot be backfilled.
+- The activity log is two tables read as one. `deal_history` holds deal changes with their before and after; `activity_log` holds everything else (sign-ins, account changes, reports run). They are merged by `/api/activity` rather than every event being written twice, which would let the two drift apart. The same backfill caveat applies, and the panel says on screen when recording began so a short log is not mistaken for an idle user.
+- `users.last_seen_at` is stamped at most once a minute per person, so "last seen" costs one write a minute rather than one per request.
+- Expenses are kept apart from deal cost, and deliberately so. A deal's cost is what that deal's goods cost, and it drives gross profit; expenses are company overheads. Feeding overheads into deal margin would make every deal look unprofitable, so the Expenses tab reports on its own and the dashboard's GP figures are untouched by it. A combined net-profit view would be a separate piece of work.
 - Cost is a single figure per deal, not a line-item breakdown — enough for margin reporting, but it won't itemise freight, duty or landed cost separately. Say the word if you need that split out.
 
 ## Project structure
