@@ -774,6 +774,68 @@ a.doc-name:focus-visible { color: var(--burnt-orange); border-bottom-color: curr
   background: var(--burnt-orange);
 }
 
+/* ---------- deal tables with gross profit ---------- */
+/* These carry the numbers people came to the dashboard for, so they are given
+   more weight than a plain table: a branded header band, the profit columns
+   tinted apart from value, and a total that reads as a conclusion. */
+.deal-table thead th {
+  background: var(--deep-brown);
+  color: var(--soft-canvas);
+  border-bottom: none;
+}
+.deal-table thead th.gp-col {
+  background: var(--copper-bark);
+}
+
+.deal-table tbody td.gp-col {
+  background: rgba(239, 221, 201, 0.45);
+  font-variant-numeric: tabular-nums;
+}
+.deal-table tbody tr:hover td.gp-col { background: rgba(194, 175, 152, 0.4); }
+.deal-table tbody td.gp-col.negative { color: var(--burnt-orange); font-weight: 500; }
+
+.deal-table tfoot .total-row td {
+  background: var(--beige);
+  border-top: 2px solid var(--copper-bark);
+  font-weight: 500;
+  color: var(--deep-brown);
+}
+.deal-table tfoot .total-row td.gp-col { background: var(--mineral-sand); }
+.deal-table tfoot .total-row td.negative { color: var(--burnt-orange); }
+
+/* A deal whose gross profit is being guessed at. Marked where the salesperson
+   actually works - the deals table - so the missing cost is visible as a job
+   to do rather than as a dash that reads like "nothing to see". */
+td.cost-missing {
+  background: rgba(221, 79, 10, 0.1);
+  color: var(--burnt-orange);
+  font-style: italic;
+  box-shadow: inset 2px 0 0 var(--cinnabar);
+}
+tr:hover td.cost-missing { background: rgba(221, 79, 10, 0.16); }
+
+/* The same story on the dashboard, where the figure is already an estimate. */
+.deal-table tbody td.gp-col.gp-is-estimated {
+  background: rgba(221, 79, 10, 0.12);
+  color: var(--burnt-orange);
+  font-style: italic;
+}
+
+/* The asterisk marking an estimated figure, kept quiet but findable. */
+.gp-estimated {
+  color: var(--burnt-orange);
+  font-weight: 600;
+  margin-left: 2px;
+  cursor: help;
+}
+
+.gp-footnote {
+  margin: 10px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+
 /* ---------- segmented control ---------- */
 .segmented {
   display: inline-flex;

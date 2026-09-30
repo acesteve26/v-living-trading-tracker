@@ -8,8 +8,9 @@ Brand palette and typography carried over from the NVF brand guidelines — see 
 
 - Tracks deals through a pipeline: **Lead → Qualified → Proposal Sent → Negotiation → Won / Lost**
 - Records customer, contact, product category (Tiles / Sanitaryware / Marble / Wallpaper / Furniture / Mixed / Other), value, cost, probability, expected close date, owner and notes
+- **Customers are remembered** — start typing a customer name on a deal and the ones already on the books are suggested; pick one and their contact name, email and phone fill themselves in from the last deal with them. Anything typed by hand is never overwritten
 - **Documents on a deal** — quotes, purchase orders, invoices and spec sheets, dropped anywhere on the deal window or picked from a file dialog, up to 50 MB per deal. PDFs and images open in a preview inside the app; everything else downloads
-- **Gross profit tracking** — enter the cost against a deal and the app derives margin % and GP (see [Gross profit](#gross-profit))
+- **Gross profit tracking** — enter the cost against a deal and the app derives margin % and GP (see [Gross profit](#gross-profit)). Where no cost has been captured, the dashboard's chart and deal tables estimate GP at 20% and mark every such figure with an asterisk; the headline KPI tiles stay actual and never use the estimate
 - Dashboard with a **period dropdown**: This Month, Year to Date, Full Year (previous/current/next two years), or a custom date range
 - KPI cards: open pipeline value, weighted pipeline, pipeline gross profit, confirmed/won value, won gross profit, win rate
 - Charts: monthly pipeline vs. won trend, pipeline by stage, pipeline by product category
@@ -94,6 +95,19 @@ Each deal has a **Cost** field. Everything else is derived, so there's only ever
 Cost is optional. Leave it blank on an early-stage deal and the margin and GP columns show `—` rather than reading as 100% margin. The deal form shows the resulting GP and margin live as you type, and loss-making deals are shown in Burnt Orange.
 
 On the dashboard, **Pipeline Gross Profit** and **Won Gross Profit** total the GP for the selected period, with the blended margin underneath. These only count deals that have a cost captured, and the sub-line says how many that is (e.g. "4 of 5 deals costed") so a partial figure is never mistaken for the whole picture.
+
+### The 20% assumption
+
+A deal with no cost recorded would otherwise contribute nothing to a gross profit figure, leaving a month looking emptier than it is. So in two places — the **Gross Profit by Month** chart and the two deal tables beneath it — an uncosted deal is estimated at a **20% margin**, set by `ASSUMED_GP_MARGIN_PCT` in [constants.js](constants.js).
+
+Every figure that leans on it is marked:
+
+- an asterisk on the individual margin and GP cell
+- a footnote under each table and the chart saying how many were estimated
+- the chart tooltip naming the count for that month
+- on the **Deals** tab, where salespeople work, the cost cell reads "Add cost" and the margin and GP cells are tinted in Cinnabar with the estimate shown — so a missing cost looks like a job to do rather than a dash that reads as "nothing here". **Deals → No cost recorded** lists exactly those deals
+
+The **KPI tiles deliberately do not use it**. Those stay actual, counted only across deals with a real cost, so the headline numbers can never be inflated by an assumption. That is why the tiles and the chart can legitimately disagree: one is measured, the other is measured-plus-estimated. The fix in both cases is to record the cost.
 
 ## 3. Deploying to Render
 

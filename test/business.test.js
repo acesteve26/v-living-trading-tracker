@@ -171,6 +171,119 @@ describe('gross profit', () => {
 
 // --------------------------------------------------------- dashboard
 
+describe('remembering a customer', () => {
+  test('a customer entered once is offered back with their contact details', async () => {
+    await createDeal({
+      customer_name: 'Remembered Trading LLC',
+      contact_name: 'Fatima Al Rashid',
+      contact_email: 'fatima@remembered.example',
+      contact_phone: '+971 50 123 4567'
+    });
+
+    const { customers } = (await admin.get('/api/customers')).body;
+    const match = customers.find((c) => c.customer_name === 'Remembered Trading LLC');
+
+    assert.ok(match, 'the customer should be on the list');
+    assert.equal(match.contact_name, 'Fatima Al Rashid');
+    assert.equal(match.contact_email, 'fatima@remembered.example');
+    assert.equal(match.contact_phone, '+971 50 123 4567');
+  });
+
+  test('the details offered are the most recent ones, not the oldest', async () => {
+    await createDeal({
+      customer_name: 'Changed Contact Co',
+      contact_name: 'Old Contact',
+      contact_phone: '+971 50 000 0001'
+    });
+    await createDeal({
+      customer_name: 'Changed Contact Co',
+      contact_name: 'New Contact',
+      contact_phone: '+971 50 000 0002'
+    });
+
+    const { customers } = (await admin.get('/api/customers')).body;
+    const matches = customers.filter((c) => c.customer_name === 'Changed Contact Co');
+
+    assert.equal(matches.length, 1, 'a customer appears once however many deals they have');
+    assert.equal(matches[0].contact_name, 'New Contact', 'a changed number must not be undone by an old deal');
+    assert.equal(matches[0].contact_phone, '+971 50 000 0002');
+  });
+
+  test('every signed-in role can read the list, since everyone types customer names', async () => {
+    const viewer = await h.createUserAndLogin(admin, {
+      name: 'Customer Reader', email: 'cust-read@test.local', role: 'management'
+    });
+    assert.equal((await viewer.client.get('/api/customers')).status, 200);
+    assert.equal((await h.createClient().get('/api/customers')).status, 401);
+  });
+});
+
+describe('finding the deals that still need a cost', () => {
+  test('the no-cost view returns open deals with nothing costed', async () => {
+    await createDeal({ customer_name: 'Needs A Cost', cost: null, stage: 'Qualified' });
+    await createDeal({ customer_name: 'Already Costed', cost: 40000, stage: 'Qualified' });
+
+    const { deals } = (await admin.get('/api/deals?view=no_cost')).body;
+    const names = deals.map((d) => d.customer_name);
+
+    assert.ok(names.includes('Needs A Cost'));
+    assert.ok(!names.includes('Already Costed'), 'a costed deal has nothing to chase');
+    for (const d of deals) assert.equal(d.cost, null);
+  });
+});
+
+describe('gross profit where no cost was captured', () => {
+  const { ASSUMED_GP_MARGIN_PCT } = require('../constants');
+
+  test('a deal with a cost reports the real figure, not the assumption', async () => {
+    await createDeal({
+      customer_name: 'GP Costed', value: 100000, cost: 62000,
+      stage: 'Won', won_lost_date: '2029-02-10'
+    });
+    const { recentWon } = (await admin.get('/api/dashboard?range=year:2029')).body;
+    const deal = recentWon.find((d) => d.customer_name === 'GP Costed');
+
+    assert.equal(deal.gp, 38000);
+    assert.equal(deal.marginPct, 38);
+    assert.equal(deal.gpAssumed, false, 'a real cost must never be marked as estimated');
+  });
+
+  test('a deal with no cost is estimated at the house margin and flagged', async () => {
+    await createDeal({
+      customer_name: 'GP Uncosted', value: 50000, cost: null,
+      stage: 'Won', won_lost_date: '2029-02-11'
+    });
+    const { recentWon } = (await admin.get('/api/dashboard?range=year:2029')).body;
+    const deal = recentWon.find((d) => d.customer_name === 'GP Uncosted');
+
+    assert.equal(deal.gp, (50000 * ASSUMED_GP_MARGIN_PCT) / 100);
+    assert.equal(deal.marginPct, ASSUMED_GP_MARGIN_PCT);
+    assert.equal(deal.gpAssumed, true, 'an estimate must be marked so it is never read as measured');
+  });
+
+  test('the monthly chart reports gross profit and counts what it had to estimate', async () => {
+    const { monthly } = (await admin.get('/api/dashboard?range=year:2029')).body;
+    const february = monthly.find((m) => m.label.startsWith('Feb'));
+
+    assert.equal(february.wonGp, 38000 + 10000, 'real GP plus the estimated one');
+    assert.equal(february.wonAssumed, 1, 'and it says one of them was estimated');
+    assert.equal(february.won, 150000, 'the underlying value is still carried for the tooltip');
+  });
+
+  test('the headline KPI stays actual, and is not inflated by the assumption', async () => {
+    const { kpis } = (await admin.get('/api/dashboard?range=year:2029')).body;
+
+    assert.equal(kpis.wonGp.gp, 38000, 'only the costed deal counts towards the headline figure');
+    assert.equal(kpis.wonGp.pricedCount, 1);
+    assert.equal(kpis.wonGp.totalCount, 2, 'while still saying how much of the set that covers');
+  });
+
+  test('the assumed margin is published, so the page and the server agree on it', async () => {
+    const res = await admin.get('/api/dashboard?range=year:2029');
+    assert.equal(res.body.assumedGpMarginPct, ASSUMED_GP_MARGIN_PCT);
+  });
+});
+
 describe('dashboard figures', () => {
   test('open count covers exactly the deals in the open value', async () => {
     await createDeal({ customer_name: 'Scheduled A', value: 10000, stage: 'Qualified', expected_close_date: '2026-07-01' });

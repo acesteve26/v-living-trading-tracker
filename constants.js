@@ -39,6 +39,12 @@ const EXPENSE_CATEGORIES = [
   'Other'
 ];
 
+// When a deal has no cost captured, gross profit is estimated at this margin
+// so a month is never simply blank on the dashboard. Every figure that leans
+// on it is marked with an asterisk, and the KPI tiles deliberately do not use
+// it - those stay actual, counted only across deals with a real cost.
+const ASSUMED_GP_MARGIN_PCT = 20;
+
 // Management and accounts oversee and report; they do not work the pipeline.
 const CAN_EDIT_DEALS = ['admin', 'sales'];
 // Expenses are a bookkeeping record, so they belong to the finance roles
@@ -148,6 +154,7 @@ module.exports = {
   CAN_VIEW_ACTIVITY,
   ACTIVITY_ACTIONS,
   DEFAULT_PROBABILITIES,
+  ASSUMED_GP_MARGIN_PCT,
   HISTORY_ACTIONS,
   DOCUMENT_TYPES,
   PREVIEWABLE_TYPES,

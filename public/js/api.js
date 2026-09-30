@@ -190,6 +190,7 @@ async function loadCurrency() {
     window.__APP_CATEGORIES__ = data.productCategories || [];
     window.__APP_STAGES__ = data.stages || [];
     window.__APP_EXPENSE_CATEGORIES__ = data.expenseCategories || [];
+    window.__APP_ASSUMED_GP_PCT__ = data.assumedGpMarginPct || 20;
     window.__APP_DOC_EXTENSIONS__ = data.documentExtensions || [];
     window.__APP_DOC_PREVIEW_TYPES__ = data.documentPreviewTypes || [];
     window.__APP_DOC_MAX_BYTES__ = data.maxDealDocumentBytes || 0;

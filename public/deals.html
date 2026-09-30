@@ -40,6 +40,7 @@
         <option value="">All deals</option>
         <option value="overdue">Action overdue</option>
         <option value="closing_soon">Closing in 30 days</option>
+        <option value="no_cost">No cost recorded</option>
         <option value="no_next_action">No next action set</option>
         <option value="no_close_date">No close date set</option>
         <option value="archived">Archived</option>
@@ -74,7 +75,9 @@
         <div class="form-grid">
           <div class="field full">
             <label>Customer name *</label>
-            <input id="f_customer_name" required />
+            <input id="f_customer_name" required list="customerList" autocomplete="off" />
+            <datalist id="customerList"></datalist>
+            <p class="field-hint hidden" id="customerFilled"></p>
           </div>
           <div class="field">
             <label>Contact name</label>

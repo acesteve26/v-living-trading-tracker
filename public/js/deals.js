@@ -9,6 +9,8 @@ function escapeHtml(s) {
 
 // GP is only meaningful once a cost is captured; a blank cost stays blank rather
 // than reading as 100% margin.
+const assumedPct = () => window.__APP_ASSUMED_GP_PCT__ || 20;
+
 function grossProfit(value, cost) {
   if (cost === null || cost === undefined || cost === '') return null;
   const v = Number(value) || 0;
@@ -106,9 +108,9 @@ async function loadDeals() {
           <td>${escapeHtml(d.customer_name)}${d.archived_at ? ' <span class="muted-note">(archived)</span>' : ''}</td>
           <td>${d.product_category}</td>
           <td class="num">${money(d.value)}</td>
-          <td class="num muted">${d.cost === null || d.cost === undefined ? '—' : money(d.cost)}</td>
-          <td${gp ? marginCellClass(gp.marginPct) : ' class="num"'}>${gp && gp.marginPct !== null ? gp.marginPct.toFixed(1) + '%' : '—'}</td>
-          <td${gp ? marginCellClass(gp.marginPct) : ' class="num"'}>${gp ? money(gp.gp) : '—'}</td>
+          <td class="num${gp ? ' muted' : ' cost-missing'}">${gp ? money(d.cost) : 'Add cost'}</td>
+          <td${gp ? marginCellClass(gp.marginPct) : ' class="num cost-missing"'}>${gp && gp.marginPct !== null ? gp.marginPct.toFixed(1) + '%' : assumedPct() + '%*'}</td>
+          <td${gp ? marginCellClass(gp.marginPct) : ' class="num cost-missing"'}>${gp ? money(gp.gp) : money((Number(d.value) || 0) * assumedPct() / 100) + '*'}</td>
           <td><span class="badge ${d.stage.replace(/\s+/g, '-')}">${d.stage}</span></td>
           <td class="num">${d.probability}%</td>
           <td>${d.expected_close_date || '—'}</td>
@@ -210,6 +212,61 @@ async function loadActivity(dealId) {
   } catch (e) {
     list.innerHTML = `<li class="muted-note">Could not load activity: ${escapeHtml(e.message)}</li>`;
   }
+}
+
+// ---------- known customers ----------
+// Typing a customer name offers the ones already on the books and fills in
+// their contact details, so the same client is not re-keyed on every deal.
+let knownCustomers = [];
+// What the last autofill put in each field, so switching to a different
+// customer replaces those values while anything typed by hand is left alone.
+let autofilled = {};
+
+async function loadCustomers() {
+  try {
+    const { customers } = await api('/api/customers');
+    knownCustomers = customers;
+    document.getElementById('customerList').innerHTML = customers
+      .map((c) => `<option value="${escapeHtml(c.customer_name)}"></option>`)
+      .join('');
+  } catch (e) {
+    knownCustomers = [];
+  }
+}
+
+const findCustomer = (name) =>
+  knownCustomers.find((c) => c.customer_name.toLowerCase() === String(name || '').trim().toLowerCase());
+
+function applyCustomerDetails() {
+  const note = document.getElementById('customerFilled');
+  const match = findCustomer(document.getElementById('f_customer_name').value);
+  if (!match) {
+    note.classList.add('hidden');
+    return;
+  }
+
+  const fields = {
+    f_contact_name: match.contact_name,
+    f_contact_email: match.contact_email,
+    f_contact_phone: match.contact_phone
+  };
+
+  const filled = [];
+  for (const [id, value] of Object.entries(fields)) {
+    const input = document.getElementById(id);
+    // fill what is empty, and replace what a previous autofill put there -
+    // never overwrite something typed by hand
+    const safeToReplace = input.value === '' || input.value === autofilled[id];
+    if (!safeToReplace) continue;
+    input.value = value || '';
+    autofilled[id] = value || '';
+    if (value) filled.push(id.replace('f_contact_', ''));
+  }
+
+  note.textContent = filled.length
+    ? `Contact ${filled.join(', ')} filled in from the last deal with ${match.customer_name}. Edit if it has changed.`
+    : `${match.customer_name} is already on the books.`;
+  note.classList.remove('hidden');
 }
 
 // ---------- documents ----------
@@ -555,6 +612,8 @@ function resetDealForm() {
   document.getElementById('btnRestoreDeal').classList.add('hidden');
   openDealIsArchived = false;
   openDealStage = null;
+  autofilled = {};
+  document.getElementById('customerFilled').classList.add('hidden');
   document.getElementById('dealErr').textContent = '';
   document.getElementById('f_owner_id').value = currentUser.id;
   document.getElementById('f_stage').value = 'Lead';
@@ -656,7 +715,7 @@ function collectDealForm() {
     '<option value="">All categories</option>' +
     categories.map((c) => `<option>${escapeHtml(c)}</option>`).join('');
   await loadUsersForOwnerSelect();
-  await loadDeals();
+  await Promise.all([loadDeals(), loadCustomers()]);
 
   // dashboard links arrive as /deals.html?deal=123
   const wanted = new URLSearchParams(location.search).get('deal');
@@ -691,6 +750,9 @@ function collectDealForm() {
     loadDeals();
   });
   document.getElementById('f_lost_reason_choice').addEventListener('change', syncStageFields);
+
+  document.getElementById('f_customer_name').addEventListener('input', applyCustomerDetails);
+  document.getElementById('f_customer_name').addEventListener('change', applyCustomerDetails);
 
   document.getElementById('f_value').addEventListener('input', updateGpReadout);
   document.getElementById('f_cost').addEventListener('input', updateGpReadout);
@@ -728,7 +790,7 @@ function collectDealForm() {
         }
       }
       closeDealModal();
-      await loadDeals();
+      await Promise.all([loadDeals(), loadCustomers()]);
     } catch (err) {
       errEl.textContent = err.message;
     }

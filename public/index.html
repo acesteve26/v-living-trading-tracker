@@ -78,8 +78,9 @@
 
     <div class="grid-2">
       <div class="card">
-        <h3>Pipeline by Expected Close Month vs. Won <span class="card-note">— pipeline is a forecast, won is actual</span></h3>
+        <h3>Gross Profit by Month <span class="card-note">— pipeline is a forecast, won is actual</span></h3>
         <canvas id="chartMonthly"></canvas>
+        <p class="gp-footnote" id="chartNote"></p>
       </div>
       <div class="card">
         <h3>Open Pipeline by Stage</h3>
@@ -87,30 +88,48 @@
       </div>
     </div>
 
+    <!-- The table takes the wide slot: with margin and GP alongside value it
+         needs the room, and a doughnut reads perfectly well at this size. -->
     <div class="grid-2">
-      <div class="card">
-        <h3>Open Pipeline by Product Category</h3>
-        <canvas id="chartCategory"></canvas>
-      </div>
       <div class="card">
         <h3>Top Open Deals</h3>
         <div class="table-scroll">
-          <table>
-            <thead><tr><th>Customer</th><th class="num">Value</th><th>Stage</th></tr></thead>
+          <table class="deal-table">
+            <thead>
+              <tr>
+                <th>Customer</th><th class="num">Value</th>
+                <th class="num gp-col">Margin</th><th class="num gp-col">GP</th>
+                <th>Stage</th>
+              </tr>
+            </thead>
             <tbody id="topDealsBody"></tbody>
+            <tfoot><tr class="total-row" id="topDealsFoot"></tr></tfoot>
           </table>
         </div>
+        <p class="gp-footnote" id="topDealsNote"></p>
+      </div>
+      <div class="card">
+        <h3>Open Pipeline by Product Category</h3>
+        <canvas id="chartCategory"></canvas>
       </div>
     </div>
 
     <div class="card">
       <h3>Confirmed Deals Won (in selected period)</h3>
       <div class="table-scroll">
-        <table>
-          <thead><tr><th>Customer</th><th class="num">Value</th><th>Closed Date</th></tr></thead>
+        <table class="deal-table">
+          <thead>
+            <tr>
+              <th>Customer</th><th class="num">Value</th>
+              <th class="num gp-col">Margin</th><th class="num gp-col">GP</th>
+              <th>Closed Date</th>
+            </tr>
+          </thead>
           <tbody id="wonDealsBody"></tbody>
+          <tfoot><tr class="total-row" id="wonDealsFoot"></tr></tfoot>
         </table>
       </div>
+      <p class="gp-footnote" id="wonDealsNote"></p>
     </div>
   </div>
 

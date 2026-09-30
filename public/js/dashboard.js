@@ -138,20 +138,40 @@ async function loadDashboard() {
   const legend = { position: 'bottom', labels: { color: colors.text, boxWidth: 10, boxHeight: 10, padding: 16, usePointStyle: true, pointStyle: 'rect' } };
   const currencyTick = (value) => moneyCompact(value);
 
+  // Gross profit rather than headline value: what the business keeps is the
+  // number worth tracking month to month. Deals with no cost captured are
+  // estimated at the house margin and the footnote says how many.
+  const assumedPct = data.assumedGpMarginPct;
+  const assumedTotal = data.monthly.reduce((n, m) => n + m.pipelineAssumed + m.wonAssumed, 0);
+  const one = assumedTotal === 1;
+  document.getElementById('chartNote').textContent = assumedTotal
+    ? `* ${assumedTotal} deal${one ? '' : 's'} in this period ${one ? 'has' : 'have'} no cost recorded, so ${one ? 'its' : 'their'} gross profit is estimated at ${assumedPct}%.`
+    : 'Every deal in this period has a cost recorded, so no gross profit here is estimated.';
+
   charts.monthly = new Chart(document.getElementById('chartMonthly'), {
     type: 'bar',
     data: {
       labels: data.monthly.map((m) => m.label),
       datasets: [
-        { label: 'Pipeline', data: data.monthly.map((m) => m.pipeline), backgroundColor: colors.mineralSand },
-        { label: 'Won', data: data.monthly.map((m) => m.won), backgroundColor: colors.burntOrange }
+        { label: 'Pipeline GP', data: data.monthly.map((m) => m.pipelineGp), backgroundColor: colors.mineralSand },
+        { label: 'Won GP', data: data.monthly.map((m) => m.wonGp), backgroundColor: colors.burntOrange }
       ]
     },
     options: {
       responsive: true,
       plugins: {
         legend,
-        tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${money(c.parsed.y)}` } }
+        tooltip: {
+          callbacks: {
+            label: (c) => {
+              const row = data.monthly[c.dataIndex];
+              const estimated = c.datasetIndex === 0 ? row.pipelineAssumed : row.wonAssumed;
+              const total = c.datasetIndex === 0 ? row.pipeline : row.won;
+              const mark = estimated ? ` * ${estimated} estimated at ${assumedPct}%` : '';
+              return `${c.dataset.label}: ${money(c.parsed.y)} (on ${money(total)} of value)${mark}`;
+            }
+          }
+        }
       },
       scales: {
         x: { ticks: { color: colors.text }, grid: { display: false }, border: { color: colors.grid } },
@@ -218,20 +238,64 @@ async function loadDashboard() {
     }
   });
 
-  document.getElementById('topDealsBody').innerHTML = data.topOpenDeals.length
-    ? data.topOpenDeals
-        .map(
-          (d) =>
-            `<tr><td>${dealLink(d)}</td><td class="num">${money(d.value)}</td><td><span class="badge ${d.stage.replace(/\s+/g, '-')}">${d.stage}</span></td></tr>`
-        )
-        .join('')
-    : '<tr><td colspan="3" class="empty-state">No open deals in this period</td></tr>';
+  renderDealTable('topDealsBody', 'topDealsFoot', 'topDealsNote', data.topOpenDeals, assumedPct, {
+    empty: 'No open deals in this period',
+    lastCell: (d) => `<span class="badge ${d.stage.replace(/\s+/g, '-')}">${d.stage}</span>`
+  });
 
-  document.getElementById('wonDealsBody').innerHTML = data.recentWon.length
-    ? data.recentWon
-        .map((d) => `<tr><td>${dealLink(d)}</td><td class="num">${money(d.value)}</td><td>${d.won_lost_date || '—'}</td></tr>`)
-        .join('')
-    : '<tr><td colspan="3" class="empty-state">No confirmed deals in this period</td></tr>';
+  renderDealTable('wonDealsBody', 'wonDealsFoot', 'wonDealsNote', data.recentWon, assumedPct, {
+    empty: 'No confirmed deals in this period',
+    lastCell: (d) => d.won_lost_date || '—'
+  });
+}
+
+// Both deal tables, with margin and GP carried alongside the value. An
+// estimated figure is marked at the point it is read rather than only in a
+// note at the bottom, so a number is never taken for measured when it isn't.
+function renderDealTable(bodyId, footId, noteId, deals, assumedPct, { empty, lastCell }) {
+  const body = document.getElementById(bodyId);
+  const foot = document.getElementById(footId);
+  const note = document.getElementById(noteId);
+
+  if (!deals.length) {
+    body.innerHTML = `<tr><td colspan="5" class="empty-state">${empty}</td></tr>`;
+    foot.innerHTML = '';
+    note.textContent = '';
+    return;
+  }
+
+  body.innerHTML = deals
+    .map((d) => {
+      const star = d.gpAssumed ? '<span class="gp-estimated" title="No cost recorded — estimated">*</span>' : '';
+      const marginText = d.marginPct === null ? '—' : `${d.marginPct.toFixed(1)}%`;
+      // an estimate is tinted as well as asterisked, so it is obvious at a
+      // glance which rows still need a cost putting against them
+      const tone = d.gpAssumed ? ' gp-is-estimated' : d.gp < 0 ? ' negative' : '';
+      return `<tr>
+        <td>${dealLink(d)}</td>
+        <td class="num">${money(d.value)}</td>
+        <td class="num gp-col${tone}">${marginText}${star}</td>
+        <td class="num gp-col${tone}">${money(d.gp)}${star}</td>
+        <td>${lastCell(d)}</td>
+      </tr>`;
+    })
+    .join('');
+
+  const totalValue = deals.reduce((s, d) => s + Number(d.value), 0);
+  const totalGp = deals.reduce((s, d) => s + d.gp, 0);
+  const blendedMargin = totalValue > 0 ? (totalGp / totalValue) * 100 : null;
+
+  foot.innerHTML = `
+    <td>Total of ${deals.length} shown</td>
+    <td class="num">${money(totalValue)}</td>
+    <td class="num gp-col">${blendedMargin === null ? '—' : blendedMargin.toFixed(1) + '%'}</td>
+    <td class="num gp-col${totalGp < 0 ? ' negative' : ''}">${money(totalGp)}</td>
+    <td></td>`;
+
+  const estimated = deals.filter((d) => d.gpAssumed).length;
+  note.textContent = estimated
+    ? `* ${estimated} of these ${deals.length} ${estimated === 1 ? 'has' : 'have'} no cost recorded — gross profit estimated at ${assumedPct}%.`
+    : '';
 }
 
 // Real anchors rather than click handlers: keyboard accessible and

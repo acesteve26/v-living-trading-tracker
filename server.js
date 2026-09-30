@@ -16,6 +16,7 @@ const {
   EXPENSE_CATEGORIES,
   CAN_MANAGE_USERS: MANAGE_USER_ROLES,
   CAN_VIEW_ACTIVITY: VIEW_ACTIVITY_ROLES,
+  ASSUMED_GP_MARGIN_PCT,
   DOCUMENT_TYPES,
   PREVIEWABLE_TYPES
 } = require('./constants');
@@ -777,6 +778,7 @@ app.get(
       // so the upload area can name what it accepts, and refuse the obvious
       // cases before pushing a file over the wire
       expenseCategories: EXPENSE_CATEGORIES,
+      assumedGpMarginPct: ASSUMED_GP_MARGIN_PCT,
       documentExtensions: Object.keys(DOCUMENT_TYPES),
       documentPreviewTypes: PREVIEWABLE_TYPES,
       maxDealDocumentBytes: config.maxDealDocumentBytes
@@ -852,7 +854,7 @@ app.get(
     }
     // saved views for the things a salesperson actually looks for. All three are
     // about live work, so each is limited to open stages.
-    const VIEWS = ['overdue', 'closing_soon', 'no_next_action', 'no_close_date'];
+    const VIEWS = ['overdue', 'closing_soon', 'no_next_action', 'no_close_date', 'no_cost'];
     if (VIEWS.includes(view)) {
       params.push(OPEN_STAGES);
       sql += ` AND d.stage = ANY($${params.length})`;
@@ -863,6 +865,9 @@ app.get(
         sql += ` AND d.expected_close_date BETWEEN ${BUSINESS_TODAY} AND ${BUSINESS_TODAY} + 30`;
       } else if (view === 'no_close_date') {
         sql += ' AND d.expected_close_date IS NULL';
+      } else if (view === 'no_cost') {
+        // the deals whose gross profit is currently being guessed at
+        sql += ' AND d.cost IS NULL';
       } else {
         sql += ' AND d.next_action_date IS NULL';
       }
@@ -881,6 +886,27 @@ app.get(
     const deal = await loadDeal(req.params.id);
     if (!deal) return res.status(404).json({ error: 'Deal not found' });
     res.json({ deal });
+  })
+);
+
+// ---------- known customers ----------
+// Derived from the deals already recorded rather than kept as a separate list
+// to maintain. DISTINCT ON takes the most recent deal per customer, so the
+// contact details offered are the last ones used rather than the oldest - if a
+// number changed, the change came in on a later deal and that is what is
+// suggested. Archived deals still count: the customer is real either way.
+app.get(
+  '/api/customers',
+  requireAuth,
+  route(async (req, res) => {
+    const customers = await db.all(
+      `SELECT DISTINCT ON (lower(customer_name))
+              customer_name, contact_name, contact_email, contact_phone
+       FROM deals
+       WHERE customer_name <> ''
+       ORDER BY lower(customer_name), updated_at DESC`
+    );
+    res.json({ customers });
   })
 );
 
@@ -1594,6 +1620,29 @@ app.get(
       byCategory[d.product_category].value += d.value;
     });
 
+    // One answer to "what is this deal worth in profit", used by the monthly
+    // chart and both deal tables so they can never disagree. A deal with no
+    // cost captured is estimated at the house margin and flagged, rather than
+    // being left out and quietly making a month look thinner than it is.
+    const gpOfDeal = (d) => {
+      const value = Number(d.value) || 0;
+      if (d.cost === null || d.cost === undefined) {
+        return { gp: (value * ASSUMED_GP_MARGIN_PCT) / 100, marginPct: ASSUMED_GP_MARGIN_PCT, assumed: true };
+      }
+      const gp = value - Number(d.cost);
+      return { gp, marginPct: value > 0 ? (gp / value) * 100 : null, assumed: false };
+    };
+
+    const gpTotal = (rows) => ({
+      gp: rows.reduce((s, d) => s + gpOfDeal(d).gp, 0),
+      assumedCount: rows.filter((d) => gpOfDeal(d).assumed).length
+    });
+
+    const withGp = (d, extra) => {
+      const { gp, marginPct, assumed } = gpOfDeal(d);
+      return { id: d.id, customer_name: d.customer_name, value: d.value, cost: d.cost, gp, marginPct, gpAssumed: assumed, ...extra };
+    };
+
     const start = new Date(from);
     const end = new Date(to);
     const months = [];
@@ -1607,36 +1656,38 @@ app.get(
       const monthStart = `${y}-${String(m + 1).padStart(2, '0')}-01`;
       const monthEndDate = new Date(y, m + 1, 0);
       const monthEnd = `${y}-${String(m + 1).padStart(2, '0')}-${String(monthEndDate.getDate()).padStart(2, '0')}`;
-      const pipeline = openDeals
-        .filter((d) => d.expected_close_date >= monthStart && d.expected_close_date <= monthEnd)
-        .reduce((s, d) => s + d.value, 0);
-      const won = wonDeals
-        .filter((d) => d.won_lost_date >= monthStart && d.won_lost_date <= monthEnd)
-        .reduce((s, d) => s + d.value, 0);
-      return { label: monthLabel(y, m), pipeline, won };
+      const pipelineDeals = openDeals.filter(
+        (d) => d.expected_close_date >= monthStart && d.expected_close_date <= monthEnd
+      );
+      const wonInMonth = wonDeals.filter(
+        (d) => d.won_lost_date >= monthStart && d.won_lost_date <= monthEnd
+      );
+
+      const pipelineGp = gpTotal(pipelineDeals);
+      const wonGp = gpTotal(wonInMonth);
+
+      return {
+        label: monthLabel(y, m),
+        pipeline: pipelineDeals.reduce((s, d) => s + d.value, 0),
+        won: wonInMonth.reduce((s, d) => s + d.value, 0),
+        pipelineGp: pipelineGp.gp,
+        wonGp: wonGp.gp,
+        // so the chart can mark the months that lean on the assumption
+        pipelineAssumed: pipelineGp.assumedCount,
+        wonAssumed: wonGp.assumedCount
+      };
     });
 
     const topOpenDeals = [...openDeals, ...openDealsNoDate]
       .sort((a, b) => b.value - a.value)
       .slice(0, 8)
-      .map((d) => ({
-        id: d.id,
-        customer_name: d.customer_name,
-        value: d.value,
-        stage: d.stage,
-        expected_close_date: d.expected_close_date
-      }));
+      .map((d) => withGp(d, { stage: d.stage, expected_close_date: d.expected_close_date }));
 
     const recentWon = wonDeals
       .slice()
       .sort((a, b) => (b.won_lost_date || '').localeCompare(a.won_lost_date || ''))
       .slice(0, 8)
-      .map((d) => ({
-        id: d.id,
-        customer_name: d.customer_name,
-        value: d.value,
-        won_lost_date: d.won_lost_date
-      }));
+      .map((d) => withGp(d, { won_lost_date: d.won_lost_date }));
 
     // Deliberately NOT filtered by the selected period: this answers "what needs
     // doing now", which has nothing to do with which year you're looking at.
@@ -1697,9 +1748,14 @@ app.get(
         openCount: openDeals.length,
         wonCount: wonDeals.length,
         lostCount: lostDeals.length,
+        // Deliberately actual: counted only across deals with a real cost, with
+        // the coverage named in the sub-line. The 20% assumption fills gaps in
+        // the chart and the tables below, where it is marked - it is not
+        // allowed to inflate the headline figures.
         openGp: grossProfit(openDeals),
         wonGp: grossProfit(wonDeals)
       },
+      assumedGpMarginPct: ASSUMED_GP_MARGIN_PCT,
       byStage,
       byCategory,
       monthly,
