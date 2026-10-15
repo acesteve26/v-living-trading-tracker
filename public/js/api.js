@@ -38,6 +38,55 @@ function showToast(message) {
   }, 3000);
 }
 
+// A styled pop-up for anything carrying data-tip. It appears straight away on
+// hover or keyboard focus, unlike the browser's own title tooltip, which waits
+// a second and cannot be styled. It lives on <body> and is placed from the
+// element's position on screen, so a sideways-scrolling table can never clip
+// it, and it flips below the element when there is no room above.
+(function wireTooltips() {
+  let tip = null;
+  const GAP = 8;
+
+  const show = (el) => {
+    if (!tip) {
+      tip = document.createElement('div');
+      tip.className = 'tooltip';
+      tip.setAttribute('role', 'tooltip');
+      document.body.appendChild(tip);
+    }
+    tip.textContent = el.dataset.tip;
+    tip.classList.add('visible');
+
+    const r = el.getBoundingClientRect();
+    const t = tip.getBoundingClientRect();
+    let top = r.top - t.height - GAP;
+    const below = top < GAP;
+    if (below) top = r.bottom + GAP;
+    const left = Math.max(GAP, Math.min(r.left + r.width / 2 - t.width / 2, window.innerWidth - t.width - GAP));
+
+    tip.style.top = `${top}px`;
+    tip.style.left = `${left}px`;
+    tip.classList.toggle('below', below);
+  };
+
+  const hide = () => tip && tip.classList.remove('visible');
+
+  document.addEventListener('mouseover', (e) => {
+    const el = e.target.closest('[data-tip]');
+    if (el) show(el);
+  });
+  document.addEventListener('mouseout', (e) => {
+    if (e.target.closest('[data-tip]')) hide();
+  });
+  document.addEventListener('focusin', (e) => {
+    const el = e.target.closest('[data-tip]');
+    if (el) show(el);
+  });
+  document.addEventListener('focusout', hide);
+  // a fixed-position box would be left floating where the element used to be
+  window.addEventListener('scroll', hide, true);
+})();
+
 // Uploads send the file as the whole request body, with its name in the query
 // string. There is no multipart form to build, and the browser streams the File
 // object straight through.

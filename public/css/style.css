@@ -1430,3 +1430,129 @@ tr.deal-row:hover td.cost-missing {
 .doc-remove:hover {
   color: var(--burnt-orange);
 }
+
+/* ==========================================================================
+   After the sale: Delivered and Paid on a won deal
+   ========================================================================== */
+.fulfilment {
+  margin-top: 22px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--burnt-orange);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-subtle);
+}
+
+.fulfilment-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.fulfilment-row + .fulfilment-row {
+  border-top: 1px solid rgba(194, 175, 152, 0.3);
+}
+
+.tick {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--deep-brown);
+}
+
+.tick input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--burnt-orange);
+  cursor: pointer;
+}
+
+.tick input[type="checkbox"]:disabled,
+.tick input[type="checkbox"]:disabled + .tick-label {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.tick-note {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Under a won deal's badge on the main list: one pill per tick box.
+   Done is calm, waiting asks for attention, late insists on it. */
+.after-sale {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.pill.done {
+  background-color: rgba(194, 175, 152, 0.4);
+  color: var(--deep-brown);
+}
+
+.pill.waiting {
+  background-color: var(--surface);
+  border-color: rgba(150, 63, 22, 0.55);
+  color: var(--burnt-orange);
+}
+
+.pill.late {
+  background-color: var(--burnt-orange);
+  color: var(--soft-canvas);
+  font-weight: 600;
+}
+
+.pill:focus-visible {
+  outline: 2px solid var(--copper-bark);
+  outline-offset: 1px;
+}
+
+/* The pop-up that explains whatever is under the pointer. Drawn on top of the
+   whole page so no scrolling container can cut it off. */
+.tooltip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 300;
+  max-width: 260px;
+  padding: 8px 11px;
+  border-radius: var(--radius-sm);
+  background-color: var(--deep-brown);
+  color: var(--soft-canvas);
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.45;
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease;
+}
+
+.tooltip.visible {
+  opacity: 1;
+  visibility: visible;
+}

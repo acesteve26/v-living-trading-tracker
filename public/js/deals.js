@@ -19,15 +19,141 @@ function grossProfit(value, cost) {
   return { gp, marginPct: v > 0 ? (gp / v) * 100 : null };
 }
 
+// ---------- after the sale ----------
+const isFinished = (d) => d.stage === 'Lost' || (d.stage === 'Won' && Boolean(d.delivered_on) && Boolean(d.paid_on));
+
+const shortDate = (iso) =>
+  new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+// Days from a business date to today, for the hover text only. Whether a deal
+// is late is decided by the server (delivery_late / payment_late), using the
+// same rule as Needs Attention, so the list and that panel cannot disagree.
+function daysSince(iso) {
+  const [y1, m1, d1] = iso.split('-').map(Number);
+  const [y2, m2, d2] = businessToday().split('-').map(Number);
+  return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86400000);
+}
+
+// Two pills under a won deal's badge on the main list, one per tick box, so
+// where every deal stands after the sale can be read down the list without
+// opening anything. Each state has a symbol as well as a colour - done ✓,
+// waiting ○, late ! - so it reads without relying on colour alone.
+function afterSaleStatus(d) {
+  if (d.stage !== 'Won') return '';
+
+  // The pop-up text says what the pill means and, where something is owed,
+  // what to do about it. It is also the accessible name, and the pill takes
+  // keyboard focus, so the explanation is not limited to mouse users.
+  const pill = (label, state, tip) =>
+    `<span class="pill ${state}" tabindex="0" data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}">${{ done: '✓', waiting: '○', late: '!' }[state]} ${label}</span>`;
+
+  const byWhom = (name) => (name ? ` by ${name}` : '');
+
+  const delivery = d.delivered_on
+    ? pill('Delivered', 'done', `Delivered on ${shortDate(d.delivered_on)}${byWhom(d.delivered_by_name)}.`)
+    : d.delivery_late
+      ? pill('Delivered', 'late', `Delivery late: not delivered ${daysSince(d.won_lost_date)} days after the win. This deal is in Needs Attention.`)
+      : pill('Delivered', 'waiting', 'Not delivered yet. Tick Delivered on the deal once the goods arrive.');
+
+  const payment = d.paid_on
+    ? pill('Paid', 'done', `Paid on ${shortDate(d.paid_on)}${byWhom(d.paid_by_name)}.`)
+    : d.payment_late
+      ? pill('Paid', 'late', `Payment late: not paid ${daysSince(d.delivered_on)} days after delivery. This deal is in Needs Attention.`)
+      : d.delivered_on
+        ? pill('Paid', 'waiting', 'Not paid yet. Tick Paid on the deal when the money comes in.')
+        : pill('Paid', 'waiting', 'Not paid yet. Payment is counted from delivery, so it cannot be late before then.');
+
+  return `<div class="after-sale">${delivery}${payment}</div>`;
+}
+
+// The deal as last saved. The ticks act on the stored deal, not on whatever
+// is half-edited in the form, so they only show while both agree it is Won.
+let fulfilmentDeal = null;
+
+function renderFulfilment(deal) {
+  fulfilmentDeal = deal;
+  const section = document.getElementById('fulfilmentSection');
+  const formStage = document.getElementById('f_stage').value;
+  if (!deal || deal.stage !== 'Won' || formStage !== 'Won') {
+    section.classList.add('hidden');
+    return;
+  }
+  section.classList.remove('hidden');
+
+  const delivered = document.getElementById('f_delivered');
+  const paid = document.getElementById('f_paid');
+  const archived = Boolean(deal.archived_at);
+
+  delivered.checked = Boolean(deal.delivered_on);
+  paid.checked = Boolean(deal.paid_on);
+  // accounts can mark a deal paid without being able to edit anything else
+  delivered.disabled = archived || !currentUser.canEditDeals;
+  paid.disabled = archived || !currentUser.canMarkPaid;
+
+  const note = (on, by) => (on ? `${shortDate(on)} · ${by || 'Unknown'}` : 'Not yet');
+  document.getElementById('deliveredNote').textContent = note(deal.delivered_on, deal.delivered_by_name);
+  document.getElementById('paidNote').textContent = note(deal.paid_on, deal.paid_by_name);
+
+  const hint = document.getElementById('fulfilmentHint');
+  if (deal.delivered_on && deal.paid_on) {
+    hint.textContent = 'Delivered and paid — this deal is complete.';
+  } else if (archived) {
+    hint.textContent = 'Restore this deal to update it.';
+  } else if (!currentUser.canEditDeals && currentUser.canMarkPaid) {
+    hint.textContent = 'You can mark this deal as paid. Each tick saves straight away.';
+  } else if (!currentUser.canMarkPaid) {
+    hint.textContent = '';
+  } else {
+    hint.textContent = 'Each tick saves straight away.';
+  }
+}
+
+function wireFulfilment() {
+  const send = async (field, input) => {
+    if (!fulfilmentDeal) return;
+    const wanted = input.checked;
+
+    // Taking a tick off throws away the date it was recorded on, so ask first.
+    if (!wanted) {
+      const when = fulfilmentDeal[field === 'delivered' ? 'delivered_on' : 'paid_on'];
+      if (!confirm(`Remove the ${field} tick${when ? ` recorded on ${shortDate(when)}` : ''}?`)) {
+        input.checked = true;
+        return;
+      }
+    }
+
+    input.disabled = true;
+    document.getElementById('dealErr').textContent = '';
+    try {
+      const { deal } = await api(`/api/deals/${fulfilmentDeal.id}/fulfilment`, {
+        method: 'PATCH',
+        body: JSON.stringify({ [field]: wanted })
+      });
+      renderFulfilment(deal);
+      showToast(wanted ? `Marked as ${field}.` : `${field[0].toUpperCase() + field.slice(1)} tick removed.`);
+      loadActivity(deal.id);
+      loadDeals();
+    } catch (err) {
+      // nothing was saved, so the box goes back to how it was
+      input.checked = !wanted;
+      document.getElementById('dealErr').textContent = err.message;
+      renderFulfilment(fulfilmentDeal);
+    }
+  };
+
+  document.getElementById('f_delivered').addEventListener('change', (e) => send('delivered', e.target));
+  document.getElementById('f_paid').addEventListener('change', (e) => send('paid', e.target));
+}
+
 // An overdue next action is the single most useful thing to spot in the list,
 // so it is called out rather than shown as a plain date.
 function nextActionCell(d) {
   if (!d.next_action && !d.next_action_date) return '<span class="muted-note">—</span>';
   const today = businessToday();
-  // A lost deal is closed. Whatever next action it had is history now, not a
-  // job running late, so it is never flagged - matching the server, which
-  // already leaves lost deals out of Needs Attention and the overdue filter.
-  const overdue = d.stage !== 'Lost' && d.next_action_date && d.next_action_date < today;
+  // A finished deal has nothing left to be late: a lost one, or a won one that
+  // has been both delivered and paid. Its last next action is history, so it
+  // is never flagged - matching the server's Needs Attention and overdue filter.
+  const overdue = !isFinished(d) && d.next_action_date && d.next_action_date < today;
   const date = d.next_action_date
     ? `<span class="${overdue ? 'overdue' : ''}">${d.next_action_date}${overdue ? ' (overdue)' : ''}</span>`
     : '';
@@ -114,7 +240,7 @@ async function loadDeals() {
           <td class="num${gp ? ' muted' : ' cost-missing'}">${gp ? money(d.cost) : 'Add cost'}</td>
           <td${gp ? marginCellClass(gp.marginPct) : ' class="num cost-missing"'}>${gp && gp.marginPct !== null ? gp.marginPct.toFixed(1) + '%' : assumedPct() + '%*'}</td>
           <td${gp ? marginCellClass(gp.marginPct) : ' class="num cost-missing"'}>${gp ? money(gp.gp) : money((Number(d.value) || 0) * assumedPct() / 100) + '*'}</td>
-          <td><span class="badge ${d.stage.replace(/\s+/g, '-')}">${d.stage}</span></td>
+          <td><span class="badge ${d.stage.replace(/\s+/g, '-')}">${d.stage}</span>${afterSaleStatus(d)}</td>
           <td class="num">${d.probability}%</td>
           <td>${d.expected_close_date || '—'}</td>
           <td>${nextActionCell(d)}</td>
@@ -622,6 +748,8 @@ function resetDealForm() {
   document.getElementById('f_stage').value = 'Lead';
   document.getElementById('f_probability').value = stageProbabilities.Lead ?? 10;
   document.getElementById('activitySection').classList.add('hidden');
+  document.getElementById('fulfilmentSection').classList.add('hidden');
+  fulfilmentDeal = null;
   pendingFiles = [];
   savedDocuments = [];
   document.getElementById('docErr').textContent = '';
@@ -659,6 +787,7 @@ async function openDealModal(id) {
     document.getElementById('btnRestoreDeal').classList.toggle('hidden', !openDealIsArchived);
     loadActivity(id);
     loadDocuments(id);
+    renderFulfilment(deal);
   }
 
   // An archived deal is a closed record: its documents stay readable, but
@@ -746,7 +875,12 @@ function collectDealForm() {
   document.getElementById('filterStage').addEventListener('change', loadDeals);
   document.getElementById('filterCategory').addEventListener('change', loadDeals);
   document.getElementById('filterOwner').addEventListener('change', loadDeals);
+  document.getElementById('filterView').addEventListener('change', (e) => {
+    if (e.target.value.startsWith('awaiting_')) setDealStatus('won');
+    else if (e.target.value === 'overdue') setDealStatus('all');
+  });
   document.getElementById('filterView').addEventListener('change', loadDeals);
+  wireFulfilment();
   document.getElementById('btnClearFilters').addEventListener('click', clearFilters);
   document.getElementById('btnMyDeals').addEventListener('click', () => {
     document.getElementById('filterOwner').value = String(currentUser.id);
@@ -765,6 +899,8 @@ function collectDealForm() {
     if (suggested !== undefined) document.getElementById('f_probability').value = suggested;
     applyWonDates(e.target.value);
     syncStageFields();
+    // the ticks act on the saved deal, so they hide while the form says otherwise
+    renderFulfilment(fulfilmentDeal);
   });
 
   document.getElementById('dealForm').addEventListener('submit', async (e) => {

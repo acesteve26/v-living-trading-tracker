@@ -12,6 +12,8 @@ const {
   OPEN_STAGES,
   ROLES,
   CAN_EDIT_DEALS: EDIT_DEAL_ROLES,
+  CAN_MARK_PAID: MARK_PAID_ROLES,
+  FULFILMENT_FLAG_DAYS,
   CAN_EDIT_EXPENSES: EDIT_EXPENSE_ROLES,
   EXPENSE_CATEGORIES,
   CAN_MANAGE_USERS: MANAGE_USER_ROLES,
@@ -90,6 +92,15 @@ const route = (handler) => (req, res, next) => Promise.resolve(handler(req, res,
 // server is the wrong day for four hours of every Dubai day.
 const BUSINESS_TODAY = `((NOW() AT TIME ZONE '${config.businessTimezone}')::date)`;
 
+// What "late" means after a sale, written once and used both by Needs
+// Attention and by the pills on the deals list, so the two can never disagree.
+// The payment clock starts at delivery, since that is when payment falls due.
+// Expects the deals table aliased as d.
+const LATE_DELIVERY_SQL = `(d.stage = 'Won' AND d.delivered_on IS NULL
+    AND d.won_lost_date <= ${BUSINESS_TODAY} - ${Number(FULFILMENT_FLAG_DAYS)})`;
+const LATE_PAYMENT_SQL = `(d.stage = 'Won' AND d.delivered_on IS NOT NULL AND d.paid_on IS NULL
+    AND d.delivered_on <= ${BUSINESS_TODAY} - ${Number(FULFILMENT_FLAG_DAYS)})`;
+
 function businessToday() {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: config.businessTimezone,
@@ -155,6 +166,7 @@ const CAN_EDIT_DEALS = new Set(EDIT_DEAL_ROLES);
 const CAN_MANAGE_USERS = new Set(MANAGE_USER_ROLES);
 const CAN_VIEW_ACTIVITY = new Set(VIEW_ACTIVITY_ROLES);
 const CAN_EDIT_EXPENSES = new Set(EDIT_EXPENSE_ROLES);
+const CAN_MARK_PAID = new Set(MARK_PAID_ROLES);
 
 function normaliseRole(role, fallback = 'sales') {
   return ROLES.includes(role) ? role : fallback;
@@ -185,6 +197,7 @@ function publicUser(u) {
     mustChangePassword: u.must_change_password === true,
     canEditDeals: CAN_EDIT_DEALS.has(u.role),
     canEditExpenses: CAN_EDIT_EXPENSES.has(u.role),
+    canMarkPaid: CAN_MARK_PAID.has(u.role),
     canManageUsers: CAN_MANAGE_USERS.has(u.role),
     canViewActivity: CAN_VIEW_ACTIVITY.has(u.role)
   };
@@ -815,7 +828,9 @@ app.get(
   requireAuth,
   route(async (req, res) => {
     const { stage, category, search, ownerId, view, archived, status } = req.query;
-    let sql = `SELECT d.*, u.name AS owner_name
+    let sql = `SELECT d.*, u.name AS owner_name,
+                      ${LATE_DELIVERY_SQL} AS delivery_late,
+                      ${LATE_PAYMENT_SQL} AS payment_late
                FROM deals d LEFT JOIN users u ON u.id = d.owner_id
                WHERE 1=1`;
     const params = [];
@@ -852,16 +867,26 @@ app.get(
                  OR d.contact_name ILIKE $${params.length}
                  OR d.description ILIKE $${params.length})`;
     }
-    // saved views for the things a salesperson actually looks for. All three are
-    // about live work, so each is limited to open stages.
-    const VIEWS = ['overdue', 'closing_soon', 'no_next_action', 'no_close_date', 'no_cost'];
-    if (VIEWS.includes(view)) {
+    // Saved views for the things people actually look for. Most are about live
+    // pipeline work and stay on open stages; the after-sale ones are about won
+    // deals; and "overdue" covers both, since a won deal still waiting on
+    // delivery or payment can have a next action that runs late. A lost deal,
+    // or a won one that is delivered and paid, has nothing left to be late.
+    const OPEN_VIEWS = ['closing_soon', 'no_next_action', 'no_close_date', 'no_cost'];
+    if (view === 'overdue') {
+      params.push(OPEN_STAGES);
+      sql += ` AND (d.stage = ANY($${params.length})
+                    OR (d.stage = 'Won' AND (d.delivered_on IS NULL OR d.paid_on IS NULL)))
+               AND d.next_action_date IS NOT NULL AND d.next_action_date < ${BUSINESS_TODAY}`;
+    } else if (view === 'awaiting_delivery') {
+      sql += ` AND d.stage = 'Won' AND d.delivered_on IS NULL`;
+    } else if (view === 'awaiting_payment') {
+      sql += ` AND d.stage = 'Won' AND d.paid_on IS NULL`;
+    } else if (OPEN_VIEWS.includes(view)) {
       params.push(OPEN_STAGES);
       sql += ` AND d.stage = ANY($${params.length})`;
 
-      if (view === 'overdue') {
-        sql += ` AND d.next_action_date IS NOT NULL AND d.next_action_date < ${BUSINESS_TODAY}`;
-      } else if (view === 'closing_soon') {
+      if (view === 'closing_soon') {
         sql += ` AND d.expected_close_date BETWEEN ${BUSINESS_TODAY} AND ${BUSINESS_TODAY} + 30`;
       } else if (view === 'no_close_date') {
         sql += ' AND d.expected_close_date IS NULL';
@@ -925,7 +950,9 @@ const TRACKED_FIELDS = {
   lost_reason: 'Lost reason',
   owner_id: 'Owner',
   next_action: 'Next action',
-  next_action_date: 'Next action due'
+  next_action_date: 'Next action due',
+  delivered_on: 'Delivered',
+  paid_on: 'Paid'
 };
 
 const asComparable = (v) => (v === null || v === undefined || v === '' ? null : String(v));
@@ -1125,7 +1152,14 @@ app.put(
            product_category = $5, description = $6, value = $7, cost = $8, stage = $9,
            probability = $10, expected_close_date = $11, won_lost_date = $12,
            owner_id = $13, notes = $14, next_action = $15, next_action_date = $16,
-           lost_reason = $17, updated_at = NOW()
+           lost_reason = $17,
+           -- delivery and payment only mean anything on a won deal, so taking
+           -- a deal out of Won clears them rather than leaving stale ticks
+           delivered_on      = CASE WHEN $9 = 'Won' THEN delivered_on      ELSE NULL END,
+           delivered_by_name = CASE WHEN $9 = 'Won' THEN delivered_by_name ELSE NULL END,
+           paid_on           = CASE WHEN $9 = 'Won' THEN paid_on           ELSE NULL END,
+           paid_by_name      = CASE WHEN $9 = 'Won' THEN paid_by_name      ELSE NULL END,
+           updated_at = NOW()
          WHERE id = $18`,
         [
           b.customer_name.trim(),
@@ -1238,6 +1272,91 @@ app.post(
     });
 
     res.json({ ok: true });
+  })
+);
+
+// ---------- after the sale ----------
+// Delivered and Paid are ticked one at a time and saved immediately, rather
+// than going through the deal form, because accounts must be able to tick Paid
+// without being able to save anything else on the deal. Each tick records the
+// business date and who made it, and lands in the deal's history.
+app.patch(
+  '/api/deals/:id/fulfilment',
+  requireAuth,
+  route(async (req, res) => {
+    const { delivered, paid } = req.body || {};
+    const role = req.session.user.role;
+
+    if (delivered === undefined && paid === undefined) {
+      return res.status(400).json({ error: 'Nothing to change: send delivered or paid' });
+    }
+    for (const [name, value] of [['delivered', delivered], ['paid', paid]]) {
+      if (value !== undefined && typeof value !== 'boolean') {
+        return res.status(400).json({ error: `${name} must be true or false` });
+      }
+    }
+    if (delivered !== undefined && !CAN_EDIT_DEALS.has(role)) {
+      return res.status(403).json({ error: 'Your role cannot mark a deal as delivered' });
+    }
+    if (paid !== undefined && !CAN_MARK_PAID.has(role)) {
+      return res.status(403).json({ error: 'Your role cannot mark a deal as paid' });
+    }
+
+    const existing = await loadDeal(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Deal not found' });
+    if (existing.stage !== 'Won') {
+      return res.status(400).json({ error: 'Only a won deal can be marked delivered or paid' });
+    }
+    if (existing.archived_at) {
+      return res.status(400).json({ error: 'Restore this deal before updating it' });
+    }
+
+    const today = businessToday();
+    const who = req.session.user.name;
+    const sets = [];
+    const params = [];
+    const changes = [];
+
+    // Ticking something already ticked keeps the original date, so a second
+    // click never quietly moves when the goods actually arrived.
+    const apply = (wanted, dateCol, byCol) => {
+      if (wanted === undefined) return;
+      const before = existing[dateCol];
+      if (wanted === Boolean(before)) return;
+      params.push(wanted ? today : null);
+      sets.push(`${dateCol} = $${params.length}`);
+      params.push(wanted ? who : null);
+      sets.push(`${byCol} = $${params.length}`);
+      changes.push({ field: dateCol, old_value: before, new_value: wanted ? today : null });
+    };
+    apply(delivered, 'delivered_on', 'delivered_by_name');
+    apply(paid, 'paid_on', 'paid_by_name');
+
+    if (sets.length) {
+      await db.transaction(async (client) => {
+        params.push(req.params.id);
+        await db.query(
+          `UPDATE deals SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${params.length}`,
+          params,
+          client
+        );
+        await recordHistory(
+          changes.map((c) => ({
+            deal_id: Number(req.params.id),
+            deal_name: existing.customer_name,
+            changed_by: req.session.user.id,
+            changed_by_name: who,
+            action: 'updated',
+            field: c.field,
+            old_value: c.old_value,
+            new_value: c.new_value
+          })),
+          client
+        );
+      });
+    }
+
+    res.json({ deal: await loadDeal(req.params.id) });
   })
 );
 
@@ -1696,22 +1815,39 @@ app.get(
     // Deliberately NOT filtered by the selected period: this answers "what needs
     // doing now", which has nothing to do with which year you're looking at.
     const STALE_DAYS = 14;
+    // Two kinds of deal can need attention. An open one, for the long-standing
+    // reasons. And a won one that isn't finished yet - goods not delivered, or
+    // delivered and not paid - which stops appearing the moment both are
+    // ticked. A lost deal never appears: it is closed, so nothing on it is late.
+    // The pipeline-only checks (close date, gone quiet) are confined to open
+    // deals; a won deal's close date is in the past by definition.
     const attention = await db.all(
       `SELECT d.*, u.name AS owner_name,
               (d.next_action_date IS NOT NULL AND d.next_action_date < ${BUSINESS_TODAY}) AS action_overdue,
-              (d.expected_close_date IS NOT NULL AND d.expected_close_date < ${BUSINESS_TODAY}) AS close_date_passed,
-              (d.updated_at < NOW() - ($1 || ' days')::interval) AS gone_quiet,
-              (d.expected_close_date IS NULL) AS no_close_date
+              (d.stage = ANY($2) AND d.expected_close_date IS NOT NULL
+                 AND d.expected_close_date < ${BUSINESS_TODAY}) AS close_date_passed,
+              (d.stage = ANY($2) AND d.updated_at < NOW() - ($1 || ' days')::interval) AS gone_quiet,
+              (d.stage = ANY($2) AND d.expected_close_date IS NULL) AS no_close_date,
+              ${LATE_DELIVERY_SQL} AS not_delivered,
+              ${LATE_PAYMENT_SQL} AS not_paid
        FROM deals d
        LEFT JOIN users u ON u.id = d.owner_id
-       WHERE d.archived_at IS NULL AND d.stage = ANY($2)
+       WHERE d.archived_at IS NULL
          AND (
-           (d.next_action_date IS NOT NULL AND d.next_action_date < ${BUSINESS_TODAY})
-           OR (d.expected_close_date IS NOT NULL AND d.expected_close_date < ${BUSINESS_TODAY})
-           OR d.updated_at < NOW() - ($1 || ' days')::interval
-           -- without a close date a deal sits outside every period figure, so
-           -- it would otherwise be invisible on this page entirely
-           OR d.expected_close_date IS NULL
+           (d.stage = ANY($2) AND (
+              (d.next_action_date IS NOT NULL AND d.next_action_date < ${BUSINESS_TODAY})
+              OR (d.expected_close_date IS NOT NULL AND d.expected_close_date < ${BUSINESS_TODAY})
+              OR d.updated_at < NOW() - ($1 || ' days')::interval
+              -- without a close date a deal sits outside every period figure, so
+              -- it would otherwise be invisible on this page entirely
+              OR d.expected_close_date IS NULL
+           ))
+           OR
+           (d.stage = 'Won' AND (d.delivered_on IS NULL OR d.paid_on IS NULL) AND (
+              (d.next_action_date IS NOT NULL AND d.next_action_date < ${BUSINESS_TODAY})
+              OR ${LATE_DELIVERY_SQL}
+              OR ${LATE_PAYMENT_SQL}
+           ))
          )
        ORDER BY COALESCE(d.next_action_date, d.expected_close_date, d.updated_at::date) ASC
        LIMIT 25`,
@@ -1724,6 +1860,8 @@ app.get(
       if (d.action_overdue) reasons.push({ code: 'action', label: 'Action overdue' });
       if (d.close_date_passed) reasons.push({ code: 'close', label: 'Close date passed' });
       if (d.gone_quiet) reasons.push({ code: 'quiet', label: `No update in ${STALE_DAYS} days` });
+      if (d.not_delivered) reasons.push({ code: 'delivery', label: 'Not yet delivered' });
+      if (d.not_paid) reasons.push({ code: 'payment', label: 'Not yet paid' });
       return {
         id: d.id,
         customer_name: d.customer_name,

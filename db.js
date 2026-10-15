@@ -253,6 +253,15 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS archived_by INTEGER REFERENCES users(
 
 CREATE INDEX IF NOT EXISTS deals_archived_idx ON deals (archived_at);
 
+-- After a win: when the goods were delivered and when the money came in, and
+-- who said so. Business dates, like won_lost_date, so "30 days since delivery"
+-- is counted in Dubai days. Names are kept on the row for the same reason as
+-- elsewhere - the record survives the person's account being removed.
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS delivered_on DATE;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS delivered_by_name TEXT;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS paid_on DATE;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS paid_by_name TEXT;
+
 -- Category and stage lists grow over time, so their constraints are rebuilt
 -- from the shared list on every boot rather than staying pinned to whatever
 -- they were when the table was first created.

@@ -47,6 +47,16 @@ const ASSUMED_GP_MARGIN_PCT = 20;
 
 // Management and accounts oversee and report; they do not work the pipeline.
 const CAN_EDIT_DEALS = ['admin', 'sales'];
+// After a win, two things still have to happen: the goods arrive, and the
+// money comes in. Marking a deal paid is a finance job as much as a sales one,
+// so accounts can tick Paid - and only Paid - despite being read-only on deals.
+const CAN_MARK_PAID = ['admin', 'sales', 'accounts'];
+
+// How long a won deal can sit undelivered, or a delivered one unpaid, before
+// it is flagged in Needs Attention even with no next action set. The payment
+// clock starts at delivery, since that is when payment usually falls due.
+const FULFILMENT_FLAG_DAYS = 30;
+
 // Expenses are a bookkeeping record, so they belong to the finance roles
 // rather than the sales ones. Everyone signed in can see them.
 const CAN_EDIT_EXPENSES = ['admin', 'accounts'];
@@ -148,6 +158,8 @@ module.exports = {
   OPEN_STAGES,
   ROLES,
   CAN_EDIT_DEALS,
+  CAN_MARK_PAID,
+  FULFILMENT_FLAG_DAYS,
   CAN_EDIT_EXPENSES,
   EXPENSE_CATEGORIES,
   CAN_MANAGE_USERS,

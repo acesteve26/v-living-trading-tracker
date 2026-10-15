@@ -43,6 +43,8 @@
         <option value="no_cost">No cost recorded</option>
         <option value="no_next_action">No next action set</option>
         <option value="no_close_date">No close date set</option>
+        <option value="awaiting_delivery">Won – awaiting delivery</option>
+        <option value="awaiting_payment">Won – awaiting payment</option>
         <option value="archived">Archived</option>
       </select>
       <button type="button" class="btn secondary small" id="btnMyDeals">My Deals</button>
@@ -163,6 +165,28 @@
           </div>
         </div>
         <div class="error-text" id="dealErr"></div>
+
+        <!-- Only on a saved, won deal. Each tick saves the moment it is clicked,
+             independently of Save Deal, so accounts can mark a deal paid
+             without being able to change anything else on it. -->
+        <section class="fulfilment hidden" id="fulfilmentSection">
+          <h3 class="activity-title">After the sale</h3>
+          <div class="fulfilment-row">
+            <label class="tick">
+              <input type="checkbox" id="f_delivered" />
+              <span class="tick-label">Delivered</span>
+            </label>
+            <span class="tick-note" id="deliveredNote"></span>
+          </div>
+          <div class="fulfilment-row">
+            <label class="tick">
+              <input type="checkbox" id="f_paid" />
+              <span class="tick-label">Paid</span>
+            </label>
+            <span class="tick-note" id="paidNote"></span>
+          </div>
+          <p class="field-hint" id="fulfilmentHint"></p>
+        </section>
 
         <section class="documents" id="documentsSection">
           <div class="documents-head">
