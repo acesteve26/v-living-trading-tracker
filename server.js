@@ -1560,28 +1560,32 @@ app.get(
     const { range, from: fromQ, to: toQ } = req.query;
     const { from, to, label } = computeRange(range, fromQ, toQ);
 
-    const openDeals = await db.all(
-      `SELECT * FROM deals
-       WHERE archived_at IS NULL
-         AND stage = ANY($1) AND expected_close_date IS NOT NULL
-         AND expected_close_date BETWEEN $2 AND $3`,
-      [OPEN_STAGES, from, to]
-    );
-
-    const openDealsNoDate = await db.all(
-      'SELECT * FROM deals WHERE archived_at IS NULL AND stage = ANY($1) AND expected_close_date IS NULL',
-      [OPEN_STAGES]
-    );
-
-    const wonDeals = await db.all(
-      "SELECT * FROM deals WHERE archived_at IS NULL AND stage = 'Won' AND won_lost_date BETWEEN $1 AND $2",
-      [from, to]
-    );
-
-    const lostDeals = await db.all(
-      "SELECT * FROM deals WHERE archived_at IS NULL AND stage = 'Lost' AND won_lost_date BETWEEN $1 AND $2",
-      [from, to]
-    );
+    // The four reads are independent of one another, so they go to the database
+    // together rather than each waiting on the last. Against a database in
+    // another region that is the difference between one round trip and four.
+    // Expenses are deliberately not among them: they are overheads, not deal
+    // costs, and nothing on this endpoint folds them into gross profit.
+    const [openDeals, openDealsNoDate, wonDeals, lostDeals] = await Promise.all([
+      db.all(
+        `SELECT * FROM deals
+         WHERE archived_at IS NULL
+           AND stage = ANY($1) AND expected_close_date IS NOT NULL
+           AND expected_close_date BETWEEN $2 AND $3`,
+        [OPEN_STAGES, from, to]
+      ),
+      db.all(
+        'SELECT * FROM deals WHERE archived_at IS NULL AND stage = ANY($1) AND expected_close_date IS NULL',
+        [OPEN_STAGES]
+      ),
+      db.all(
+        "SELECT * FROM deals WHERE archived_at IS NULL AND stage = 'Won' AND won_lost_date BETWEEN $1 AND $2",
+        [from, to]
+      ),
+      db.all(
+        "SELECT * FROM deals WHERE archived_at IS NULL AND stage = 'Lost' AND won_lost_date BETWEEN $1 AND $2",
+        [from, to]
+      )
+    ]);
 
     const totalOpenValue = openDeals.reduce((s, d) => s + d.value, 0);
     const weightedOpenValue = openDeals.reduce((s, d) => s + (d.value * d.probability) / 100, 0);

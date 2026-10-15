@@ -218,6 +218,34 @@ describe('remembering a customer', () => {
   });
 });
 
+describe('a lost deal is never overdue', () => {
+  test('a past next action on a lost deal is neither in Needs Attention nor the overdue filter', async () => {
+    await createDeal({
+      customer_name: 'Lost With Old Action',
+      stage: 'Lost',
+      won_lost_date: '2026-03-01',
+      next_action: 'Chase the revised quote',
+      next_action_date: '2026-02-15'
+    });
+    // the same overdue action on an open deal, as a control
+    await createDeal({
+      customer_name: 'Open With Old Action',
+      stage: 'Negotiation',
+      next_action: 'Chase the revised quote',
+      next_action_date: '2026-02-15'
+    });
+
+    const overdue = (await admin.get('/api/deals?view=overdue')).body.deals.map((d) => d.customer_name);
+    assert.ok(overdue.includes('Open With Old Action'), 'the open deal should be flagged');
+    assert.ok(!overdue.includes('Lost With Old Action'), 'a lost deal is closed, not late');
+
+    const { needsAttention } = (await admin.get('/api/dashboard?range=year:2026')).body;
+    const names = needsAttention.map((d) => d.customer_name);
+    assert.ok(names.includes('Open With Old Action'));
+    assert.ok(!names.includes('Lost With Old Action'), 'nothing on a lost deal needs attention');
+  });
+});
+
 describe('finding the deals that still need a cost', () => {
   test('the no-cost view returns open deals with nothing costed', async () => {
     await createDeal({ customer_name: 'Needs A Cost', cost: null, stage: 'Qualified' });

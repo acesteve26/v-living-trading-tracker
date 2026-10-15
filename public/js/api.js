@@ -13,6 +13,31 @@ async function api(path, options = {}) {
   return data;
 }
 
+// A brief confirmation that disappears on its own, in place of alert(), which
+// stops the whole page until someone clicks OK. Toasts share one container so
+// two in quick succession stack rather than overlap. The message goes in as
+// text, never markup, and is announced to screen readers without stealing focus.
+function showToast(message) {
+  let container = document.querySelector('.toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.className = 'toast-container';
+    container.setAttribute('role', 'status');
+    container.setAttribute('aria-live', 'polite');
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.textContent = message;
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.remove();
+    if (!container.children.length) container.remove();
+  }, 3000);
+}
+
 // Uploads send the file as the whole request body, with its name in the query
 // string. There is no multipart form to build, and the browser streams the File
 // object straight through.
@@ -151,7 +176,7 @@ function wireAccountModal(forced) {
         return;
       }
       modal.classList.add('hidden');
-      alert('Password updated.');
+      showToast('Password updated.');
     } catch (err) {
       errEl.textContent = err.message;
     }

@@ -304,7 +304,7 @@ async function loadSettings() {
         currency: document.getElementById('s_currency').value
       })
     });
-    alert('Settings saved.');
+    showToast('Settings saved.');
   });
 
 })();

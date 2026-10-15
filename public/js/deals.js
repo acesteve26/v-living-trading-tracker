@@ -24,7 +24,10 @@ function grossProfit(value, cost) {
 function nextActionCell(d) {
   if (!d.next_action && !d.next_action_date) return '<span class="muted-note">—</span>';
   const today = businessToday();
-  const overdue = d.next_action_date && d.next_action_date < today;
+  // A lost deal is closed. Whatever next action it had is history now, not a
+  // job running late, so it is never flagged - matching the server, which
+  // already leaves lost deals out of Needs Attention and the overdue filter.
+  const overdue = d.stage !== 'Lost' && d.next_action_date && d.next_action_date < today;
   const date = d.next_action_date
     ? `<span class="${overdue ? 'overdue' : ''}">${d.next_action_date}${overdue ? ' (overdue)' : ''}</span>`
     : '';
